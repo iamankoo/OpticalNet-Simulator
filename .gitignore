@@ -1,0 +1,12 @@
+build/
+out/
+cmake-build-*/
+.vs/
+.vscode/
+*.obj
+*.exe
+*.pdb
+CMakeUserPresets.json
+.env
+.env.*
+CLAUDE.md
