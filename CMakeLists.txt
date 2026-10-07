@@ -38,6 +38,22 @@ target_include_directories(opticalnet_core PUBLIC include)
 target_compile_features(opticalnet_core PUBLIC cxx_std_20)
 target_link_libraries(opticalnet_core PRIVATE opticalnet_warnings)
 
+include(FetchContent)
+FetchContent_Declare(nlohmann_json
+  URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz
+  DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+FetchContent_MakeAvailable(nlohmann_json)
+
+add_library(opticalnet_topology STATIC
+  src/topology/LinkCost.cpp
+  src/topology/Topology.cpp
+  src/topology/TopologyIo.cpp
+)
+add_library(opticalnet::topology ALIAS opticalnet_topology)
+target_link_libraries(opticalnet_topology
+  PUBLIC opticalnet::core
+  PRIVATE opticalnet_warnings nlohmann_json::nlohmann_json)
+
 if(OPTICALNET_BUILD_TESTS)
   enable_testing()
   add_subdirectory(tests)

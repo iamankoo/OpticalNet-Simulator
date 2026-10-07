@@ -5,7 +5,10 @@
 #include <cstdint>
 #include <string>
 
+#include <initializer_list>
+
 #include "opticalnet/core/Network.hpp"
+#include "opticalnet/topology/Topology.hpp"
 
 namespace opticalnet::testing {
 
@@ -29,6 +32,19 @@ inline Transceiver makeTransceiver(std::uint32_t id, double rate = 100.0, double
 
 inline SwitchingElement makeSwitch(std::uint32_t id, std::uint32_t ports = 8) {
     return must(SwitchingElement::create(SwitchingElementId{id}, "s" + std::to_string(id), SwitchingType::Roadm, ports));
+}
+
+inline FiberLink makeDirectedLink(std::uint32_t id, std::uint32_t from, std::uint32_t to) {
+    return must(FiberLink::create(LinkId{id}, "d" + std::to_string(id), NodeId{from}, NodeId{to}, 100.0, 0.2, 40,
+                                  LinkDirection::Directed));
+}
+
+// Topology with the given node ids (named "n<id>") and links.
+inline Topology makeTopology(std::initializer_list<std::uint32_t> nodes, std::initializer_list<FiberLink> links) {
+    Topology topology;
+    for (const auto id : nodes) EXPECT_TRUE(topology.addNode(makeNode(id)).ok());
+    for (const auto& link : links) EXPECT_TRUE(topology.addLink(link).ok());
+    return topology;
 }
 
 template <class R>

@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include "opticalnet/core/Element.hpp"
@@ -10,15 +11,30 @@
 
 namespace opticalnet {
 
+enum class LinkDirection {
+    Bidirectional,  // traffic may flow source->target and target->source (default)
+    Directed,       // traffic may flow source->target only
+};
+
+[[nodiscard]] std::string_view toString(LinkDirection direction) noexcept;
+
 // Optical fiber between two distinct nodes. Holds static properties only:
-// how much capacity exists, not how much is in use. Whether the link is treated
-// as directed or bidirectional is decided by the topology layer (Phase 2).
+// how much capacity exists, not how much is in use.
+//
+// Direction: a link is bidirectional by default, modelling a physical fiber pair
+// carrying one direction each; capacity and cost then apply per direction.
+// A Directed link models a one-way strand (source -> target only).
+//
+// Cost: `administrativeCost` is a positive, unitless weight chosen by the operator
+// (default 1). Other routing metrics (hops, distance) derive from the link itself.
 class FiberLink final : public INetworkElement {
 public:
     [[nodiscard]] static Result<FiberLink> create(LinkId id, std::string name, NodeId source,
                                                   NodeId target, double lengthKm,
                                                   double attenuationDbPerKm,
-                                                  std::uint32_t capacityChannels);
+                                                  std::uint32_t capacityChannels,
+                                                  LinkDirection direction = LinkDirection::Bidirectional,
+                                                  double administrativeCost = 1.0);
 
     [[nodiscard]] LinkId id() const noexcept { return id_; }
     [[nodiscard]] NodeId source() const noexcept { return source_; }
@@ -26,6 +42,12 @@ public:
     [[nodiscard]] double lengthKm() const noexcept { return lengthKm_; }
     [[nodiscard]] double attenuationDbPerKm() const noexcept { return attenuationDbPerKm_; }
     [[nodiscard]] std::uint32_t capacityChannels() const noexcept { return capacityChannels_; }
+
+    [[nodiscard]] LinkDirection direction() const noexcept { return direction_; }
+    [[nodiscard]] double administrativeCost() const noexcept { return administrativeCost_; }
+
+    // True if traffic may travel from `from` to `to` over this link.
+    [[nodiscard]] bool allowsTraversal(NodeId from, NodeId to) const noexcept;
 
     [[nodiscard]] double totalLossDb() const noexcept { return lengthKm_ * attenuationDbPerKm_; }
     [[nodiscard]] bool touches(NodeId node) const noexcept { return node == source_ || node == target_; }
@@ -36,9 +58,10 @@ public:
 
 private:
     FiberLink(LinkId id, std::string name, NodeId source, NodeId target, double length,
-              double attenuation, std::uint32_t capacity)
+              double attenuation, std::uint32_t capacity, LinkDirection direction, double cost)
         : id_(id), name_(std::move(name)), source_(source), target_(target),
-          lengthKm_(length), attenuationDbPerKm_(attenuation), capacityChannels_(capacity) {}
+          lengthKm_(length), attenuationDbPerKm_(attenuation), capacityChannels_(capacity),
+          direction_(direction), administrativeCost_(cost) {}
 
     LinkId id_;
     std::string name_;
@@ -47,6 +70,8 @@ private:
     double lengthKm_;
     double attenuationDbPerKm_;
     std::uint32_t capacityChannels_;
+    LinkDirection direction_;
+    double administrativeCost_;
 };
 
 }  // namespace opticalnet

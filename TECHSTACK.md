@@ -17,7 +17,7 @@ The stack is locked. OpticalNet is primarily a **C++ simulation engine**; the co
 | API | FastAPI | Simple, typed HTTP API | Phase 9 |
 | Schemas | Pydantic | Request/response validation | Phase 9 |
 | C++/Python integration | pybind11 | Direct in-process bindings; avoids IPC/serialization overhead; CMake-friendly | Phase 9 |
-| Config parsing | nlohmann/json (header-only) | Topology/simulation config files need a JSON parser; avoids hand-written parsing | Phases 2, 5 |
+| Config parsing | nlohmann/json 3.11.3 (header-only, via `FetchContent`) | Topology/simulation config files need a JSON parser; avoids hand-written parsing | Topology loading/export in Phase 2 (`opticalnet_topology`, private dependency); simulation config in Phase 5 |
 
 pybind11 and nlohmann/json are the only non-spec additions, each justified by a concrete requirement. Both are fetched via CMake `FetchContent`, as is GoogleTest.
 

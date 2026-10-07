@@ -4,8 +4,8 @@ OpticalNet is built in exactly **10 phases**, one at a time. A phase starts only
 
 | # | Phase | Status |
 |---|-------|--------|
-| 1 | Project Foundation & Core Domain Model | Not started |
-| 2 | Topology & Graph Engine | Not started |
+| 1 | Project Foundation & Core Domain Model | Completed |
+| 2 | Topology & Graph Engine | Completed |
 | 3 | Routing Engine | Not started |
 | 4 | Resource & Connection Management | Not started |
 | 5 | Simulation Engine | Not started |

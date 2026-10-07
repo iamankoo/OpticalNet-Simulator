@@ -1,0 +1,230 @@
+{
+  "nodes": [
+    {
+      "id": 1,
+      "name": "Seattle"
+    },
+    {
+      "id": 2,
+      "name": "PaloAlto"
+    },
+    {
+      "id": 3,
+      "name": "SanDiego"
+    },
+    {
+      "id": 4,
+      "name": "SaltLakeCity"
+    },
+    {
+      "id": 5,
+      "name": "Boulder"
+    },
+    {
+      "id": 6,
+      "name": "Houston"
+    },
+    {
+      "id": 7,
+      "name": "Lincoln"
+    },
+    {
+      "id": 8,
+      "name": "Champaign"
+    },
+    {
+      "id": 9,
+      "name": "Pittsburgh"
+    },
+    {
+      "id": 10,
+      "name": "Atlanta"
+    },
+    {
+      "id": 11,
+      "name": "AnnArbor"
+    },
+    {
+      "id": 12,
+      "name": "Ithaca"
+    },
+    {
+      "id": 13,
+      "name": "Princeton"
+    },
+    {
+      "id": 14,
+      "name": "CollegePark"
+    }
+  ],
+  "links": [
+    {
+      "id": 1,
+      "name": "Seattle-PaloAlto",
+      "source": 1,
+      "target": 2,
+      "length_km": 1100,
+      "capacity_channels": 80
+    },
+    {
+      "id": 2,
+      "name": "Seattle-SanDiego",
+      "source": 1,
+      "target": 3,
+      "length_km": 1600,
+      "capacity_channels": 80
+    },
+    {
+      "id": 3,
+      "name": "Seattle-Champaign",
+      "source": 1,
+      "target": 8,
+      "length_km": 2800,
+      "capacity_channels": 80
+    },
+    {
+      "id": 4,
+      "name": "PaloAlto-SanDiego",
+      "source": 2,
+      "target": 3,
+      "length_km": 600,
+      "capacity_channels": 80
+    },
+    {
+      "id": 5,
+      "name": "PaloAlto-SaltLakeCity",
+      "source": 2,
+      "target": 4,
+      "length_km": 1000,
+      "capacity_channels": 80
+    },
+    {
+      "id": 6,
+      "name": "SanDiego-Houston",
+      "source": 3,
+      "target": 6,
+      "length_km": 2000,
+      "capacity_channels": 80
+    },
+    {
+      "id": 7,
+      "name": "SaltLakeCity-Boulder",
+      "source": 4,
+      "target": 5,
+      "length_km": 600,
+      "capacity_channels": 80
+    },
+    {
+      "id": 8,
+      "name": "SaltLakeCity-AnnArbor",
+      "source": 4,
+      "target": 11,
+      "length_km": 2400,
+      "capacity_channels": 80
+    },
+    {
+      "id": 9,
+      "name": "Boulder-Houston",
+      "source": 5,
+      "target": 6,
+      "length_km": 1100,
+      "capacity_channels": 80
+    },
+    {
+      "id": 10,
+      "name": "Boulder-Lincoln",
+      "source": 5,
+      "target": 7,
+      "length_km": 800,
+      "capacity_channels": 80
+    },
+    {
+      "id": 11,
+      "name": "Houston-Atlanta",
+      "source": 6,
+      "target": 10,
+      "length_km": 1200,
+      "capacity_channels": 80
+    },
+    {
+      "id": 12,
+      "name": "Houston-CollegePark",
+      "source": 6,
+      "target": 14,
+      "length_km": 3600,
+      "capacity_channels": 80
+    },
+    {
+      "id": 13,
+      "name": "Lincoln-Champaign",
+      "source": 7,
+      "target": 8,
+      "length_km": 700,
+      "capacity_channels": 80
+    },
+    {
+      "id": 14,
+      "name": "Champaign-Pittsburgh",
+      "source": 8,
+      "target": 9,
+      "length_km": 700,
+      "capacity_channels": 80
+    },
+    {
+      "id": 15,
+      "name": "Pittsburgh-Atlanta",
+      "source": 9,
+      "target": 10,
+      "length_km": 900,
+      "capacity_channels": 80
+    },
+    {
+      "id": 16,
+      "name": "Pittsburgh-Ithaca",
+      "source": 9,
+      "target": 12,
+      "length_km": 500,
+      "capacity_channels": 80
+    },
+    {
+      "id": 17,
+      "name": "Pittsburgh-Princeton",
+      "source": 9,
+      "target": 13,
+      "length_km": 500,
+      "capacity_channels": 80
+    },
+    {
+      "id": 18,
+      "name": "AnnArbor-Ithaca",
+      "source": 11,
+      "target": 12,
+      "length_km": 800,
+      "capacity_channels": 80
+    },
+    {
+      "id": 19,
+      "name": "AnnArbor-Princeton",
+      "source": 11,
+      "target": 13,
+      "length_km": 800,
+      "capacity_channels": 80
+    },
+    {
+      "id": 20,
+      "name": "Ithaca-CollegePark",
+      "source": 12,
+      "target": 14,
+      "length_km": 300,
+      "capacity_channels": 80
+    },
+    {
+      "id": 21,
+      "name": "Princeton-CollegePark",
+      "source": 13,
+      "target": 14,
+      "length_km": 300,
+      "capacity_channels": 80
+    }
+  ]
+}

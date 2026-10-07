@@ -8,6 +8,7 @@ std::string_view toString(ErrorCode code) noexcept {
         case ErrorCode::DuplicateId: return "DuplicateId";
         case ErrorCode::NotFound: return "NotFound";
         case ErrorCode::ConstraintViolation: return "ConstraintViolation";
+        case ErrorCode::ParseError: return "ParseError";
     }
     return "Unknown";
 }

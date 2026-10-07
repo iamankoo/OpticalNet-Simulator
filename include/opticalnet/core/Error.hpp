@@ -14,6 +14,7 @@ enum class ErrorCode {
     DuplicateId,          // an object with this id is already registered
     NotFound,             // referenced object does not exist
     ConstraintViolation,  // operation would break a relationship between objects
+    ParseError,           // configuration text is malformed or violates the schema
 };
 
 [[nodiscard]] std::string_view toString(ErrorCode code) noexcept;

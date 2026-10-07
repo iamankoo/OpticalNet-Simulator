@@ -70,8 +70,15 @@ Plain C++ classes in namespace `opticalnet` with validated constructors and stro
 
 Static structure (`Network`) is deliberately separated from dynamic state (`ResourceManager`, `SimulationState`), so a network can be shared read-only across threads.
 
-### Topology / graph representation (Phase 2)
-`Topology` wraps a `Network` with adjacency lists for traversal. `TopologyBuilder` constructs programmatically; a loader reads JSON. A validator checks integrity (dangling links, duplicate IDs, self-loops, connectivity, port counts). After validation the topology is immutable during a simulation, except for failure state (see below).
+### Topology / graph representation (Phase 2, implemented)
+`Topology` owns the single `Network` and maintains adjacency lists beside it (Node = vertex, FiberLink = edge, link cost = weight). All mutation goes through `Topology`, so the index cannot diverge from the `Network`, which is exposed read-only. There is no separate builder class: `Topology`'s add/remove operations (or `loadTopologyFromJson`) are the construction path.
+
+- **Link direction:** links are **bidirectional by default** (a physical fiber pair carries both directions); a link may be marked **`Directed`** (source to target only). `outgoing(node)` lists edges traversable *from* a node (a bidirectional link appears at both ends, a directed link at its source only); `incident(node)` lists every touching link regardless of direction. Phase 3 routing consumes `outgoing()` and never needs to interpret direction itself.
+- **Parallel links** (distinct `LinkId`s between the same nodes) are allowed; **self-links** are rejected.
+- **Cost:** `FiberLink::administrativeCost` (positive, default 1). `CostMetric` (`HopCount`, `Distance`, `Administrative`) + `linkCost()` select the edge weight; routing chooses the metric.
+- **Connectivity:** `isReachable` (direction-aware), `connectedComponents`/`isConnected` (weak, physical), `isStronglyConnected`.
+- **Validation:** structural integrity (endpoints exist, unique ids, no self-links) is guaranteed by construction. `validate()` reports whole-topology rules: node degree vs. switching-element port count (Error), isolated nodes and disconnected topology (Warnings). "Valid" and "connected" are separate questions.
+- **JSON loading/export:** `loadTopologyFromJson/File`, `topologyToJson` (schema documented in `TopologyIo.hpp`; strict, unknown keys rejected). After validation the topology is treated as immutable during a simulation, except for failure state (see below).
 
 ### Routing engine (Phase 3)
 `IRoutingAlgorithm` interface; first implementation is Dijkstra with pluggable cost metric and a feasibility/constraint filter (reach, free capacity, failed elements). Routing is a pure function of (topology, availability view, request) — it never mutates state.
@@ -114,10 +121,10 @@ Reusable checkers — resource consistency, path validity (continuity, constrain
 pybind11 module exposes load-topology, configure, run, and results. A FastAPI app provides topology and simulation endpoints with Pydantic schemas. The service holds no simulation logic; it translates JSON ⇄ C++ calls. Runs are in-process and kept in memory (no database).
 
 ### Configuration
-JSON files (parsed with nlohmann/json) for topology and simulation parameters, validated on load into typed config structs. No global configuration state.
+JSON files (parsed with nlohmann/json) for topology and simulation parameters, validated on load into typed config structs. Topology loading exists (Phase 2); simulation configuration arrives in Phase 5. No global configuration state.
 
 ### Error handling
-Expected failures (invalid topology, infeasible request, malformed config) are returned as typed results (`std::expected`-style `Result<T, Error>` implemented in-house for C++20) with error codes and messages. Exceptions are reserved for programming errors/invariant violations (e.g. violated preconditions). Request rejection is a normal outcome, not an error.
+Expected failures (invalid topology, infeasible request, malformed config via `ErrorCode::ParseError`) are returned as typed results (`std::expected`-style `Result<T, Error>` implemented in-house for C++20) with error codes and messages. Exceptions are reserved for programming errors/invariant violations (e.g. violated preconditions). Request rejection is a normal outcome, not an error.
 
 ### Logging
 A small `Logger` interface with levels (error/warn/info/debug), thread-safe sink, off or quiet by default so benchmarks and tests aren't affected. No logging framework dependency.
