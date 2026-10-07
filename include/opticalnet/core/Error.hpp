@@ -19,6 +19,7 @@ enum class ErrorCode {
     NoFeasibleRoute,      // a route exists, but none satisfies the routing constraints
     InsufficientCapacity, // a route exists, but a link on it lacks the free capacity requested
     InconsistentState,    // resource bookkeeping contradicts the requested operation (e.g. over-release)
+    InternalError,        // an unexpected exception or environment failure (e.g. threads could not be created)
 };
 
 [[nodiscard]] std::string_view toString(ErrorCode code) noexcept;

@@ -79,7 +79,7 @@ Plain C++ classes in namespace `opticalnet` with validated constructors and stro
 - **Transceiver model:** `Transceiver` — data rate and optical reach, used for feasibility.
 - **Switching element model:** `SwitchingElement` — port count and switching constraints (ROADM/OXC style).
 
-Static structure (`Network`) is deliberately separated from dynamic state (`ResourceManager`, the per-run simulation state), so a network can be shared read-only across threads.
+Static structure (`Network`) is deliberately separated from dynamic state (`ResourceManager`, the per-run simulation state), so a topology can be shared read-only across concurrently running replications (Phase 6).
 
 ### Topology / graph representation (Phase 2, implemented)
 `Topology` owns the single `Network` and maintains adjacency lists beside it (Node = vertex, FiberLink = edge, link cost = weight). All mutation goes through `Topology`, so the index cannot diverge from the `Network`, which is exposed read-only. There is no separate builder class: `Topology`'s add/remove operations (or `loadTopologyFromJson`) are the construction path.
@@ -136,10 +136,32 @@ A discrete-event simulation in **virtual time**: the clock is a number that jump
 - **Metrics:** request counts and rejection reasons, acceptance/blocking rates, peak and final allocation, time-weighted average utilization, path cost/hops, active/peak connections, releases. Formulas are in `summary.md` and `SimulationResult.hpp`.
 - Single-threaded in Phase 5; Phase 6 adds concurrent workers.
 
-### Worker pool (Phase 6)
-`WorkerPool` runs request-processing tasks on `std::thread` workers fed by a `ThreadSafeQueue` (`std::mutex` + `std::condition_variable`). Shutdown is graceful: stop accepting, drain, join.
+### Multithreaded simulation: simulation study and worker pool (Phase 6, implemented)
+**Phase 6 parallelizes independent simulation replications; each individual simulation event loop remains single-threaded.**
 
-- **Thread-safety strategy:** `Network`/`Topology` are read-only during a run; mutable shared state (`ResourceManager`, metrics) is protected by mutexes, starting coarse-grained and refined only with measurements. Route-then-allocate is treated as one critical sequence (or retried on allocation conflict) so stale availability can't cause over-allocation. The single-threaded engine remains the deterministic reference; concurrent runs are validated against invariants rather than exact event order.
+```text
+                    Simulation Study (StudyConfig: replications, workers, base seed)
+                           │
+                    Study Coordinator  (derives one seed per replication, collects results by index)
+                           │
+                       ThreadPool
+                    ┌──────┴───────┐
+                    ▼              ▼
+              Simulation       Simulation        … one task per replication
+                Run A            Run B
+                    │              │
+              Event Loop      Event Loop         (single-threaded Phase 5 engine)
+                    │              │
+             ConnectionMgr   ConnectionMgr
+                    │              │
+              Resources       Resources
+```
+- **Shared (read-only):** the `Topology` and the `SimulationConfig`. During a study the topology is immutable and read concurrently; it has no locks and must not be mutated meanwhile.
+- **Per replication (never shared):** `Rng`, `EventQueue`, `RequestGenerator`, `ConnectionManager`, `ResourceManager`, metrics, result. There is no global or shared mutable simulation state, so no locking is needed around the simulation itself.
+- **`ThreadPool`:** `std::thread` workers, a `std::mutex`/`std::condition_variable` guarded FIFO queue, and `std::packaged_task`/`std::future` for results and exceptions. Shutdown stops accepting tasks, runs everything already queued and joins every thread; no thread is detached.
+- **Seeds and determinism:** replication *i* gets `splitmix64(baseSeed + (i+1)·γ)`, computed by the coordinator, so the seed never depends on scheduling and distinct replications never share one. Results are collected by replication index, so 1 worker or 8 workers give identical outcomes.
+- **Aggregation:** totals, weighted ratios, means and per-replication statistics (mean, standard deviation, standard error, 95% interval) in `StudyAggregate`.
+- **Failures:** a replication error fails the whole study (lowest failing index reported); exceptions become `InternalError`. This is about *errors in the simulation run*; Phase 6 does not introduce network failure/recovery (Phase 7).
 
 ### Failure/recovery subsystem (Phase 7)
 `FailureModel` describes link/node failures; `FailureInjector` schedules them (explicit or seeded random) as simulation events. On failure, affected connections are located, their resources released, and rerouting attempted; unrecoverable ones are dropped. Repair events restore elements. Failed elements are an overlay on the topology (a state set consulted by routing), not structural edits.

@@ -28,6 +28,9 @@ add_executable(opticalnet_unit_tests
   unit/SimulationPrimitivesTests.cpp
   unit/RequestGeneratorTests.cpp
   unit/SimulationEngineTests.cpp
+  unit/ThreadPoolTests.cpp
+  unit/StatisticsTests.cpp
+  unit/SimulationStudyTests.cpp
 )
 target_compile_definitions(opticalnet_unit_tests PRIVATE
   OPTICALNET_CONFIG_DIR="${PROJECT_SOURCE_DIR}/configs")

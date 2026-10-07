@@ -11,7 +11,7 @@ The stack is locked. OpticalNet is primarily a **C++ simulation engine**; the co
 | Paradigm | Object-Oriented Programming | Natural fit for nodes, links, elements, routing strategies | Domain model, interfaces |
 | Build | CMake | Standard cross-platform C++ build | Whole repo |
 | Algorithms | Graph algorithms, Dijkstra, constraint-aware routing, resource allocation | The simulated problem itself | Phases 2–5 |
-| Concurrency | `std::thread`, `std::mutex`, `std::condition_variable`, thread-safe queue, worker pool | Standard-library-only concurrency | Phase 6 |
+| Concurrency | `std::thread`, `std::mutex`, `std::condition_variable`, `std::packaged_task`/`std::future`, `std::atomic` (tests), worker pool | Standard-library-only concurrency; `ThreadPool` runs independent simulation replications in parallel | Phase 6 (`opticalnet_concurrency`; linked via CMake `Threads::Threads`) |
 | C++ testing | GoogleTest, CTest | Unit/integration tests, single test entry point | All phases |
 | Python | Python 3 | Integration/API layer | Phase 9 |
 | API | FastAPI | Simple, typed HTTP API | Phase 9 |

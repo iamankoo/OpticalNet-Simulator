@@ -10,15 +10,15 @@ Source-of-truth documents: [Phases.md](Phases.md), [ARCHITECTURE.md](ARCHITECTUR
 
 ## Current status
 
-- **Implementation status:** Phases 1 (core domain model, build/test foundation), 2 (topology & graph engine), 3 (routing engine), 4 (resource & connection management) and 5 (simulation engine) are implemented and tested. Phases 6–10 are not started.
-- **Current phase:** Phase 5 complete; ready for Phase 6
-- **Completed phases:** 1, 2, 3, 4, 5
+- **Implementation status:** Phases 1 (core domain model, build/test foundation), 2 (topology & graph engine), 3 (routing engine), 4 (resource & connection management), 5 (simulation engine) and 6 (multithreaded simulation) are implemented and tested. Phases 7–10 are not started.
+- **Current phase:** Phase 6 complete; ready for Phase 7
+- **Completed phases:** 1, 2, 3, 4, 5, 6
 - **In-progress phase:** None
-- **Pending phases:** 6–10
-- **Key implemented components:** `Network`, `Node`, `FiberLink`, `Transceiver`, `SwitchingElement`, `INetworkElement`, strong IDs, `Result<T>`/`Error`, `Topology`, `Adjacency`, `ValidationReport`, `CostMetric`/`linkCost`, JSON topology loader/exporter, `Path`, `RoutingConstraints`, `IRoutingAlgorithm`, `DijkstraRouter`, `RoutingEngine`, `ConnectionRequest`, `Connection`, `ConnectionManager`, `ResourceManager`, `LinkUsage`, `SimulationEngine`, `SimulationConfig`, `RequestGenerator`, `EventQueue`, `Rng`, `SimulationResult`/`SimulationMetrics`
-- **Current tests/status:** 328 GoogleTest cases (43 Phase 1 + 78 Phase 2 + 74 Phase 3 + 59 Phase 4 + 74 Phase 5), all passing under CTest in Release and Debug (MSVC, warnings-as-errors)
-- **Known limitations:** See the Phase 1–5 summaries. No multithreaded simulation, concurrency, failures, validation framework, or Python layer yet.
-- **Next phase:** Phase 6 — Multithreaded Simulation
+- **Pending phases:** 7–10
+- **Key implemented components:** `Network`, `Node`, `FiberLink`, `Transceiver`, `SwitchingElement`, `INetworkElement`, strong IDs, `Result<T>`/`Error`, `Topology`, `Adjacency`, `ValidationReport`, `CostMetric`/`linkCost`, JSON topology loader/exporter, `Path`, `RoutingConstraints`, `IRoutingAlgorithm`, `DijkstraRouter`, `RoutingEngine`, `ConnectionRequest`, `Connection`, `ConnectionManager`, `ResourceManager`, `LinkUsage`, `SimulationEngine`, `SimulationConfig`, `RequestGenerator`, `EventQueue`, `Rng`, `SimulationResult`/`SimulationMetrics`, `ThreadPool`, `SimulationStudy`/`StudyConfig`/`StudyResult`/`StudyAggregate`, `SampleStatistics`
+- **Current tests/status:** 390 GoogleTest cases (43 Phase 1 + 78 Phase 2 + 74 Phase 3 + 59 Phase 4 + 74 Phase 5 + 62 Phase 6), all passing under CTest in Release and Debug (MSVC, warnings-as-errors)
+- **Known limitations:** See the Phase 1–6 summaries. No failure/recovery simulation, concurrency, failures, validation framework, or Python layer yet.
+- **Next phase:** Phase 7 — Failure & Recovery Simulation
 
 ## Phase 1 Summary
 
@@ -233,7 +233,7 @@ ConnectionManager  connection lifecycle; owns a ResourceManager and a RoutingEng
 **Important design decisions:** dynamic state stored apart from the topology, which keeps one copy of static capacity; allocate-after-check rather than rollback; routing coupled to resources only through `linkFilter`; the `Connection` stores its own links and demand; one owner (`ConnectionManager`) for the whole lifecycle so a single lock suffices later; `establishOnPath` kept because Phase 7 needs to place precomputed backup paths.
 
 **Known limitations:**
-- Single-threaded; not safe for concurrent use until Phase 6.
+- Single-threaded: a `ConnectionManager`/`ResourceManager` must not be shared between threads (Phase 6 gives each concurrent replication its own).
 - Capacity is a plain channel count: no wavelength identity, continuity or fragmentation, and one pool per link regardless of direction.
 - `ResourceManager` and `ConnectionManager` hold pointers to the `Topology`, which must outlive them. Topology edits while connections exist are tolerated but can leave stale allocations (reported by `validate()`, healed by release).
 - No connection lifetime, expiry, scheduling or blocking statistics in this phase (added in Phase 5); no re-routing of active connections (Phase 7).
@@ -308,7 +308,7 @@ finalAllocatedChannels, finalAvailableChannels, totalCapacityChannels, rejection
 **Important design decisions:** workload generation is separate from, and independent of, network state; an explicit-script entry point next to the generator so exact scenarios can be verified by hand; releases ordered before arrivals at equal times; time-weighted utilization; a stateless engine with per-run state; reasons for rejection kept per `ErrorCode`; the engine cross-checks its bookkeeping against the resource layer at the end of every run.
 
 **Known limitations:**
-- Single-threaded (Phase 6 adds concurrent workers); no failure/recovery events (Phase 7); no benchmarking (Phase 10).
+- Each run is single-threaded (Phase 6 runs independent replications concurrently, see below); no failure/recovery events (Phase 7); no benchmarking (Phase 10).
 - Only Poisson (or fixed) arrivals and exponential (or fixed) lifetimes, uniform endpoint selection and uniform demand: no traffic matrices, hotspots or other distributions.
 - No warm-up period: metrics include the initial transient from an empty network.
 - No confidence intervals or multi-run aggregation.
@@ -317,12 +317,108 @@ finalAllocatedChannels, finalAvailableChannels, totalCapacityChannels, rejection
 - Times are `double`, so equal-time ordering relies on exactly equal values (e.g. fixed timings that are exactly representable).
 - Not tested with GCC/Clang.
 
-**Commit:** `feat: implement OpticalNet phase 5 simulation engine` on `main` (the hash is in `git log`; a commit cannot contain its own hash).
+**Commit:** `3eccace8b94dba863dbc5061fd50658f6a9f390a` — `feat: implement OpticalNet phase 5 simulation engine`.
 
-**Next phase:** Phase 6 — Multithreaded Simulation
+**Next phase:** Phase 6 — Multithreaded Simulation (completed below)
 
 ## Phase 6 Summary
-Not started
+
+**Status:** Completed
+
+> **Phase 6 parallelizes independent simulation replications. Individual simulation event loops remain single-threaded.**
+
+**Objective:** Run many independent Phase 5 simulations concurrently (a *simulation study*) with results that are reproducible and independent of the number of threads or of scheduling.
+
+**Multithreaded architecture** (`include/opticalnet/concurrency/`, `src/concurrency/`, library `opticalnet::concurrency`; `SimulationStudy` and `Statistics` live in `opticalnet::simulation`, which now depends on the concurrency library; threads come from `Threads::Threads`):
+```text
+                       Simulation study (StudyConfig)
+                                   │
+                           study coordinator  ── derives one seed per replication (on the coordinating thread)
+                                   │
+                              ThreadPool ───────────────┬────────────────┬──────────────┐
+                                                        ▼                ▼              ▼
+                                                replication 0      replication 1   replication N-1
+                                                (own Rng, EventQueue, ConnectionManager,
+                                                 ResourceManager, metrics — nothing shared)
+                                                        └────────────────┴──────────────┘
+                                                          results collected by index → StudyResult
+```
+Unchanged: `SimulationEngine::run`, `runScript` and every Phase 1–5 class (apart from new error/code additions, see below). No topology locks and no shared mutable simulation state were added.
+
+**Worker pool (`ThreadPool`):** standard C++ only (`std::thread`, `std::mutex`, `std::condition_variable`, `std::queue`, `std::packaged_task`/`std::future`). `submit(f)` returns a `std::future` carrying the result *or the exception* of the task (an exception never escapes into a worker and is never swallowed). Tasks start in FIFO order. `shutdown()` (also run by the destructor) stops accepting tasks, lets the workers **finish every task already queued**, and joins every thread; it is idempotent and safe to call concurrently. No thread is detached or outlives the pool. Constructing with zero workers, `submit` after shutdown, and `shutdown` from inside a worker (which would self-join) are programming errors and throw. If thread creation fails part-way, the started threads are joined before the exception propagates.
+
+**Simulation study (`SimulationStudy`, `StudyConfig`, `StudyResult`):**
+- `SimulationStudy::run(topology, config, studyConfig)` runs `studyConfig.replications` replications with `studyConfig.baseSeed`; `SimulationConfig::seed` is ignored.
+- `SimulationStudy::runReplications(studyConfig, fn)` is the same coordinator with an injectable per-replication function (also the seam used by the tests to prove concurrency and to check aggregation exactly).
+- **Worker count:** `workerCount = 0` means `std::thread::hardware_concurrency()` (falling back to 1 if the platform reports 0); explicit values are used as given; the pool never gets more threads than there are replications (`resolveWorkerCount`, `StudyResult::workersUsed`).
+- **Replications:** `replications` must be ≥ 1 (**zero is rejected as `InvalidArgument`**, so no meaningless aggregates exist) and ≤ 1,000,000.
+
+**Replication seeds:** replication *i* uses `splitmix64(baseSeed + (i + 1) · 0x9E3779B97F4A7C15)`, computed on the coordinating thread. It depends only on (baseSeed, i) — never on the worker or timing — and is **injective in i** (odd multiplier and the splitmix64 mixer are both bijections modulo 2^64), so no two replications of a study can share a seed. Different base seeds give different sequences. No RNG is ever shared between threads (no mutex-guarded global RNG).
+
+**Determinism guarantees:** for the same topology, simulation config, base seed and replication count, replication *i* produces the identical `SimulationResult` (full trace and metrics) whether run with 1, 2, 4, 8, automatic, or far more workers than replications, and it equals a standalone `SimulationEngine::run` with the derived seed. Results are returned **by replication index, never by completion order**, and aggregates are computed afterwards in index order.
+
+**Thread ownership:**
+| Object | Ownership |
+|---|---|
+| `Topology` | shared, immutable, read concurrently (the caller must not mutate it during a study) |
+| `SimulationConfig`, `StudyConfig` | shared read-only; each task copies the config and sets its own seed |
+| `SimulationEngine` (stateless), `Rng`, `EventQueue`, `RequestGenerator`, `ConnectionManager`, `ResourceManager`, metrics | one set per replication, created and destroyed inside its task |
+| `SimulationResult` | produced by one task, handed to the coordinator through a future |
+| `StudyResult` | built only by the coordinating thread |
+
+An audit of Phases 1–5 found no mutable global/static state (the only `static` is a function-local `const` in the JSON loader). Topology reads are `const` lookups in standard containers, safe concurrently. A `RoutingConstraints::linkFilter` inside the config is invoked from several threads and must be thread-safe.
+
+**Aggregation (`StudyAggregate`, `aggregate()`)**, all computed from the ordered replications; ratios come from totals, not from averaging ratios:
+```text
+totalRequests, totalAccepted, totalRejected, totalReleases, rejectionsByReason   sums over replications
+aggregateAcceptanceRate = totalAccepted / totalRequests        aggregateBlockingRate = totalRejected / totalRequests   (0 if no requests)
+meanActiveConnectionsAtEnd, meanPeakActiveConnections, meanPeakAllocatedChannels,
+meanFinalAllocatedChannels, meanAverageUtilization             equal-weight means over replications
+averagePathCost, averageHopCount   = Σ(replication mean × accepted) / totalAccepted   (accepted-weighted; 0 if none accepted)
+acceptanceRate, blockingRate, averageUtilization   SampleStatistics of the per-replication values
+```
+`SampleStatistics`: count, mean, sample standard deviation (n−1), standard error, and a 95% confidence half-width using Student's *t* (exact table for 1–30 degrees of freedom, first-order approximation above). The interval assumes independent, roughly normal per-replication values; with fewer than 2 replications the spread is reported as 0 meaning "unknown". Replications with zero requests contribute a rate of 0 to those distributions. No statistics dependency was added.
+
+**Error handling:** `InvalidArgument` for a bad `StudyConfig` or `SimulationConfig` (before any thread starts). If a replication returns an error, the **whole study fails** with that error (message prefixed `replication <i>: `), choosing the lowest failing index so the reported error is the same for every worker count; the other replications still run to completion and every worker is joined before the call returns (nothing is cancelled, nothing left running). An exception thrown inside a replication (or a failure to create threads or schedule work) becomes `InternalError` naming the replication and the exception text; nothing is swallowed. Added `ErrorCode::InternalError`.
+
+**Shutdown semantics:** the study always `shutdown()`s its pool (draining the queue and joining all workers) before returning, on success and on every failure path; the pool destructor does the same if anything throws.
+
+**Tests (62 new):**
+- *ThreadPool (19):* reports its worker count; zero workers rejected; exactly N distinct worker threads, all running simultaneously (a rendezvous that can only be satisfied by truly concurrent tasks; its timeout exists only so a broken pool fails instead of hanging); every task executed (2000); results and exceptions returned through futures (type and message preserved, pool survives); more tasks than workers never exceeds the worker count; shutdown and destructor run every queued task (checked while the single worker is provably busy and 50 tasks are provably queued); submit after shutdown; idempotent and concurrent shutdown; shutdown from a worker rejected; submission from 8 threads at once; 100 create/destroy rounds; futures valid after the pool is gone; FIFO start order.
+- *Statistics (8):* empty, single value, known sample, identical values, two values, *t* table and approximation, precondition.
+- *Seeds (5):* deterministic; 100,000 distinct seeds; depends on the index and is not base+index; different bases give disjoint sequences; adjacent seeds well mixed.
+- *Study set-up (9):* zero and too many replications rejected, invalid simulation config rejected, worker-count resolution (1, 2, 8, 64 > 3 replications, 10⁶, automatic), `workersUsed`; one replication equals a direct Phase 5 run; **every one of 20 replications equals its standalone single-threaded run** (isolation); results ordered by index with 8 workers; ordering holds even when replication 0 deliberately finishes last.
+- *Determinism (6):* **1, 2, 4 and 8 workers give identical replications and aggregates** (20 replications, base seed 12345); automatic workers; 64 and 100,000 workers for 3 replications; **10 repeated 4-worker studies and 3 repeated 8-worker studies identical**; `SimulationConfig::seed` ignored; different base seeds differ.
+- *Independence and isolation (2):* 20 distinct seeds and 20 distinct arrival sequences; on a congested tiny-capacity network each of 24 replications starts with empty resources (its first request is accepted), and its final allocation and active count match an independent recomputation from its own trace.
+- *Concurrency (3):* four replications rendezvous (so they are provably running at once) and then simulate on the *same* topology, matching sequential results; 32 replications over a shared 64-node topology on 8 workers, three rounds, topology unchanged; 12 raw threads sharing one topology.
+- *Aggregation (4):* exact totals, ratios, means, weighted path averages and statistics on synthetic results (aggregate acceptance 23/40 = 0.575, not the mean of the rates); zero-request study gives zeros, no NaN; empty list; study totals equal the sum over replications.
+- *Errors (5):* failing replications → lowest index reported, all 10 still executed, for 1 and 4 workers; exceptions (standard and non-standard) reported as `InternalError`; 20 failed studies leave nothing behind and the next study works; same error for every worker count.
+- *Large (1):* 24 replications on an 8×8 grid (64 nodes, 112 links, about 600 requests each, ~14,000 in total): 1 worker and automatic workers give identical outcomes; aggregate checks hold.
+
+**Repeated concurrent execution:** all 62 Phase 6 tests were run 40 times in a row in Release and 5 times in a row in Debug with no failure. No concurrency sanitizer exists for the MSVC toolchain used here, so none was run; ThreadSanitizer on GCC/Clang remains a worthwhile follow-up.
+
+**Mutation checks performed (each caught, then restored and verified identical):** replication index ignored in the seed derivation (5 tests failed); results taken in completion order (8+ failed, including every 1-vs-N-workers comparison); allocation state shared between all `ResourceManager`s (many Phase 4/5/6 tests failed); aggregate acceptance computed as a mean of rates (2 failed); thread count not bounded by the replication count (2 failed); shutdown dropping queued tasks (a drain test failed and one timed out). Mutations that did not compile under warnings-as-errors were re-run in a separate build with that option off.
+
+**Performance/correctness validation:** the 24-replication study above took about 0.30 s with one worker and 0.05 s with 12 workers (automatic) in Release on the development machine (12 hardware threads), with identical results; a larger 40-replication, 100-node-grid run (~60,000 requests) measured earlier gave 2.3 s versus 0.4 s. These are sanity measurements, not benchmarks (Phase 10). The workloads of the heavier study tests were sized so that the whole suite stays quick (Release ~9 s, Debug ~90 s).
+
+**Test count and results:** 390 total = 43 Phase 1 + 78 Phase 2 + 74 Phase 3 + 59 Phase 4 + 74 Phase 5 + 62 Phase 6 (earlier tests unchanged). Clean rebuild and `ctest`: Debug 390/390 passed, Release 390/390 passed. Zero warnings under warnings-as-errors. C++20 confirmed in the compile commands. Toolchain unchanged (MSVC 19.44.35229, CMake 3.31.6, Ninja 1.13.0); only MSVC was tested.
+
+**Important design decisions:** parallelism is across replications, never inside an event loop, so a run stays deterministic and lock-free; seeds are derived on the coordinator by an injective mixer; results are collected by index so scheduling cannot influence them; a single failing replication fails the study with a deterministic error; the topology stays immutable during a study (no locks were added to it); the injectable replication function keeps the coordinator testable without sleeps.
+
+**Known limitations:**
+- Replications are the only unit of parallelism: a single large simulation does not speed up with more threads.
+- A failed study returns no partial results; nothing is cancelled early, so a long failing study still runs every replication.
+- Results for all replications are held in memory (with `recordTrace` this can be large).
+- `ThreadPool` is a plain FIFO pool: no priorities, work stealing, cancellation or resizing.
+- No warm-up removal, batch means or sequential stopping rules; confidence intervals assume independent, roughly normal replication averages.
+- A `linkFilter` supplied in the config must be thread-safe; this is documented, not enforced.
+- Topology must not be mutated while a study runs; this is documented, not enforced.
+- No ThreadSanitizer run (MSVC); only MSVC was tested.
+- Failure injection and recovery are Phase 7 and do not exist yet.
+
+**Commit:** `feat: implement OpticalNet phase 6 multithreaded simulation` on `main` (the hash is in `git log`; a commit cannot contain its own hash).
+
+**Next phase:** Phase 7 — Failure & Recovery Simulation
 
 ## Phase 7 Summary
 Not started

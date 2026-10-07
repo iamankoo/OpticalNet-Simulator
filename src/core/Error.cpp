@@ -13,6 +13,7 @@ std::string_view toString(ErrorCode code) noexcept {
         case ErrorCode::NoFeasibleRoute: return "NoFeasibleRoute";
         case ErrorCode::InsufficientCapacity: return "InsufficientCapacity";
         case ErrorCode::InconsistentState: return "InconsistentState";
+        case ErrorCode::InternalError: return "InternalError";
     }
     return "Unknown";
 }
