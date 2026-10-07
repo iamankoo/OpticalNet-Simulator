@@ -8,7 +8,7 @@ OpticalNet is built in exactly **10 phases**, one at a time. A phase starts only
 | 2 | Topology & Graph Engine | Completed |
 | 3 | Routing Engine | Completed |
 | 4 | Resource & Connection Management | Completed |
-| 5 | Simulation Engine | Not started |
+| 5 | Simulation Engine | Completed |
 | 6 | Multithreaded Simulation | Not started |
 | 7 | Failure & Recovery Simulation | Not started |
 | 8 | Validation & Testing Framework | Not started |

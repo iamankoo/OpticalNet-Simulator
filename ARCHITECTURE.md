@@ -56,7 +56,7 @@ Path
         ↓
 ResourceManager  (allocate / release channels per link; atomic)
         ↓
-Active Connection  (request + exact path + demand)  →  later: SimulationState (clock, metrics)
+Active Connection  (request + exact path + demand)  →  driven over virtual time by the SimulationEngine (Phase 5)
 ```
 
 Who owns what:
@@ -79,7 +79,7 @@ Plain C++ classes in namespace `opticalnet` with validated constructors and stro
 - **Transceiver model:** `Transceiver` — data rate and optical reach, used for feasibility.
 - **Switching element model:** `SwitchingElement` — port count and switching constraints (ROADM/OXC style).
 
-Static structure (`Network`) is deliberately separated from dynamic state (`ResourceManager`, `SimulationState`), so a network can be shared read-only across threads.
+Static structure (`Network`) is deliberately separated from dynamic state (`ResourceManager`, the per-run simulation state), so a network can be shared read-only across threads.
 
 ### Topology / graph representation (Phase 2, implemented)
 `Topology` owns the single `Network` and maintains adjacency lists beside it (Node = vertex, FiberLink = edge, link cost = weight). All mutation goes through `Topology`, so the index cannot diverge from the `Network`, which is exposed read-only. There is no separate builder class: `Topology`'s add/remove operations (or `loadTopologyFromJson`) are the construction path.
@@ -116,10 +116,25 @@ Established ──element failure──► Rerouted | Dropped      (Phase 7)
 ```
 `ConnectionRequest` is the input; `Connection` is the established record (request, the exact path, demand). Phase 4 implements establish and release: `ConnectionManager::establish` routes with a capacity-aware `linkFilter`, allocates the path atomically, then registers the connection; `release` returns exactly the stored links and demand. Connections have no automatic expiry (departure scheduling is Phase 5), and rerouting after failures is Phase 7.
 
-### Simulation engine (Phase 5)
-Discrete-event simulation: a time-ordered event queue of arrivals, departures (and later failures/repairs). `SimulationConfig` (topology, workload, seed, limits) drives a `Simulation` whose `SimulationState` holds the clock, active connections and metrics. Randomness comes only from a seeded `std::mt19937_64`, so a fixed seed reproduces identical results (**deterministic mode**).
+### Simulation engine (Phase 5, implemented)
+```text
+SimulationConfig
+       ↓
+SimulationEngine
+       │
+       ├── EventQueue
+       ├── RequestGenerator ── Rng (std::mt19937_64, seeded)
+       ├── ConnectionManager ── RoutingEngine + ResourceManager
+       └── Metrics  →  SimulationResult
 
-- **Simulation events/workloads:** `Event` types plus a `WorkloadGenerator` (arrival and holding-time distributions, source/destination selection).
+EventQueue → ConnectionArrival → ConnectionManager → Routing + Resources → Connection → ConnectionRelease
+```
+A discrete-event simulation in **virtual time**: the clock is a number that jumps from event to event, and nothing sleeps or reads wall-clock time. `ConnectionArrival` runs `ConnectionManager::establish` and, if accepted, schedules a `ConnectionRelease` at arrival + lifetime; `ConnectionRelease` releases exactly the stored connection. Events are ordered by (time, type, sequence); at equal times releases precede arrivals. The engine is stateless: each run builds its own `ConnectionManager` and only reads the `Topology`, so no active-connection state is ever stored in the static structure. `SimulationEngine::run` generates the workload; `runScript` replays an explicit list of arrivals.
+
+- **Workload:** `RequestGenerator` draws every random quantity of a request (arrival gap, endpoints, demand, lifetime) when the request is generated, so the workload is independent of how the network reacts. Arrivals are Poisson (exponential gaps, mean 1/rate) or fixed; lifetimes exponential or fixed; endpoints uniform and never equal.
+- **Determinism:** a fixed seed reproduces the same workload, event order, outcomes and metrics (**deterministic mode**).
+- **Metrics:** request counts and rejection reasons, acceptance/blocking rates, peak and final allocation, time-weighted average utilization, path cost/hops, active/peak connections, releases. Formulas are in `summary.md` and `SimulationResult.hpp`.
+- Single-threaded in Phase 5; Phase 6 adds concurrent workers.
 
 ### Worker pool (Phase 6)
 `WorkerPool` runs request-processing tasks on `std::thread` workers fed by a `ThreadSafeQueue` (`std::mutex` + `std::condition_variable`). Shutdown is graceful: stop accepting, drain, join.

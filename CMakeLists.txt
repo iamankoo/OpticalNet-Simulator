@@ -73,6 +73,18 @@ target_link_libraries(opticalnet_resources
   PUBLIC opticalnet::routing
   PRIVATE opticalnet_warnings)
 
+add_library(opticalnet_simulation STATIC
+  src/simulation/Rng.cpp
+  src/simulation/EventQueue.cpp
+  src/simulation/SimulationConfig.cpp
+  src/simulation/RequestGenerator.cpp
+  src/simulation/SimulationEngine.cpp
+)
+add_library(opticalnet::simulation ALIAS opticalnet_simulation)
+target_link_libraries(opticalnet_simulation
+  PUBLIC opticalnet::resources
+  PRIVATE opticalnet_warnings)
+
 if(OPTICALNET_BUILD_TESTS)
   enable_testing()
   add_subdirectory(tests)

@@ -2,7 +2,7 @@
 
 An optical network simulation and validation platform that models network topology, routing, resource allocation, concurrent simulation, failures/recovery, and network validation.
 
-> **Status: Phases 1-4 of 10 complete.** The core domain model (network, nodes, fiber links, transceivers, switching elements), the topology/graph engine (adjacency lists, connectivity, validation, JSON topology loading/export) a routing engine (Dijkstra shortest path with cost metrics, hop/cost/capacity constraints and deterministic tie-breaking) and the build/test foundation exist. Resource and connection management (atomic per-link channel allocation, connection establish/release) also exists. Simulation, concurrency, failures/recovery, the validation framework and the Python/FastAPI layer are **not implemented yet**. See [summary.md](summary.md) for current progress.
+> **Status: Phases 1-5 of 10 complete.** The core domain model (network, nodes, fiber links, transceivers, switching elements), the topology/graph engine (adjacency lists, connectivity, validation, JSON topology loading/export) a routing engine (Dijkstra shortest path with cost metrics, hop/cost/capacity constraints and deterministic tie-breaking) and the build/test foundation exist. Resource and connection management (atomic per-link channel allocation, connection establish/release) also exists, together with a single-threaded discrete-event simulation engine (virtual time, seeded request generation, metrics). Multithreaded simulation, concurrency, failures/recovery, the validation framework and the Python/FastAPI layer are **not implemented yet**. See [summary.md](summary.md) for current progress.
 
 ## Planned design (see TECHSTACK.md)
 
@@ -32,6 +32,10 @@ Topologies can be described in JSON (see `configs/ring4.json` and `configs/nsfne
 ## Resources and connections
 
 `ConnectionManager` turns a `ConnectionRequest` into an active connection: it routes around links that lack free capacity, reserves the channels on every link of the path atomically (all links or none), and records the exact path so `release` returns precisely what was taken. `ResourceManager` holds the dynamic per-link allocation state; the `Topology` stays the static structure. This layer is single-threaded for now.
+
+## Simulation
+
+`SimulationEngine::run(topology, config)` simulates connection requests arriving (Poisson or fixed intervals) and expiring over **virtual time**: events are processed in order, nothing sleeps. Each accepted request is routed, allocated and later released through `ConnectionManager`. A fixed seed reproduces the run exactly. The result reports acceptance/blocking rates, rejection reasons, peak and time-averaged utilization, path length and connection counts. The engine is single-threaded for now.
 
 ## Roadmap
 

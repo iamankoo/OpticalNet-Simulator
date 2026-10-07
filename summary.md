@@ -10,15 +10,15 @@ Source-of-truth documents: [Phases.md](Phases.md), [ARCHITECTURE.md](ARCHITECTUR
 
 ## Current status
 
-- **Implementation status:** Phases 1 (core domain model, build/test foundation), 2 (topology & graph engine), 3 (routing engine) and 4 (resource & connection management) are implemented and tested. Phases 5–10 are not started.
-- **Current phase:** Phase 4 complete; ready for Phase 5
-- **Completed phases:** 1, 2, 3, 4
+- **Implementation status:** Phases 1 (core domain model, build/test foundation), 2 (topology & graph engine), 3 (routing engine), 4 (resource & connection management) and 5 (simulation engine) are implemented and tested. Phases 6–10 are not started.
+- **Current phase:** Phase 5 complete; ready for Phase 6
+- **Completed phases:** 1, 2, 3, 4, 5
 - **In-progress phase:** None
-- **Pending phases:** 5–10
-- **Key implemented components:** `Network`, `Node`, `FiberLink`, `Transceiver`, `SwitchingElement`, `INetworkElement`, strong IDs, `Result<T>`/`Error`, `Topology`, `Adjacency`, `ValidationReport`, `CostMetric`/`linkCost`, JSON topology loader/exporter, `Path`, `RoutingConstraints`, `IRoutingAlgorithm`, `DijkstraRouter`, `RoutingEngine`, `ConnectionRequest`, `Connection`, `ConnectionManager`, `ResourceManager`, `LinkUsage`
-- **Current tests/status:** 254 GoogleTest cases (43 Phase 1 + 78 Phase 2 + 74 Phase 3 + 59 Phase 4), all passing under CTest in Release and Debug (MSVC, warnings-as-errors)
-- **Known limitations:** See the Phase 1–4 summaries. No simulation, concurrency, failures, validation framework, or Python layer yet.
-- **Next phase:** Phase 5 — Simulation Engine
+- **Pending phases:** 6–10
+- **Key implemented components:** `Network`, `Node`, `FiberLink`, `Transceiver`, `SwitchingElement`, `INetworkElement`, strong IDs, `Result<T>`/`Error`, `Topology`, `Adjacency`, `ValidationReport`, `CostMetric`/`linkCost`, JSON topology loader/exporter, `Path`, `RoutingConstraints`, `IRoutingAlgorithm`, `DijkstraRouter`, `RoutingEngine`, `ConnectionRequest`, `Connection`, `ConnectionManager`, `ResourceManager`, `LinkUsage`, `SimulationEngine`, `SimulationConfig`, `RequestGenerator`, `EventQueue`, `Rng`, `SimulationResult`/`SimulationMetrics`
+- **Current tests/status:** 328 GoogleTest cases (43 Phase 1 + 78 Phase 2 + 74 Phase 3 + 59 Phase 4 + 74 Phase 5), all passing under CTest in Release and Debug (MSVC, warnings-as-errors)
+- **Known limitations:** See the Phase 1–5 summaries. No multithreaded simulation, concurrency, failures, validation framework, or Python layer yet.
+- **Next phase:** Phase 6 — Multithreaded Simulation
 
 ## Phase 1 Summary
 
@@ -236,16 +236,90 @@ ConnectionManager  connection lifecycle; owns a ResourceManager and a RoutingEng
 - Single-threaded; not safe for concurrent use until Phase 6.
 - Capacity is a plain channel count: no wavelength identity, continuity or fragmentation, and one pool per link regardless of direction.
 - `ResourceManager` and `ConnectionManager` hold pointers to the `Topology`, which must outlive them. Topology edits while connections exist are tolerated but can leave stale allocations (reported by `validate()`, healed by release).
-- No connection lifetime, expiry, scheduling or blocking statistics (Phase 5); no re-routing of active connections (Phase 7).
+- No connection lifetime, expiry, scheduling or blocking statistics in this phase (added in Phase 5); no re-routing of active connections (Phase 7).
 - `totalCapacity()` and `totalAvailable()` scan all links on each call.
 - Not tested with GCC/Clang.
 
-**Commit:** `feat: implement OpticalNet phase 4 resource management` on `main` (the hash is in `git log`; a commit cannot contain its own hash).
+**Commit:** `953bb11801747f91dd360c37f3b296fe2bead185` — `feat: implement OpticalNet phase 4 resource management`.
 
-**Next phase:** Phase 5 — Simulation Engine
+**Next phase:** Phase 5 — Simulation Engine (completed below)
 
 ## Phase 5 Summary
-Not started
+
+**Status:** Completed
+
+**Objective:** Turn manual connection establishment into a discrete-event simulation of connection requests arriving and expiring over virtual time, with reproducible runs and meaningful metrics.
+
+**Simulation architecture** (`include/opticalnet/simulation/`, `src/simulation/`, library target `opticalnet::simulation`, depends on `opticalnet::resources`):
+```text
+SimulationConfig ─► SimulationEngine ─┬─ EventQueue
+                                      ├─ RequestGenerator (uses Rng)
+                                      ├─ ConnectionManager (routing + resources, Phase 3/4)
+                                      └─ metrics / trace  ─►  SimulationResult
+```
+- `SimulationEngine::run(topology, config)` runs a generated workload; `runScript(topology, arrivals, config)` runs an explicit list of `ScriptedArrival`s (used for hand-computed scenarios). Both share one event loop.
+- The engine is stateless: each run builds its own `ConnectionManager`; the `Topology` is only read (no active-connection state is ever written to it), and runs are independent and repeatable.
+- Single-threaded by design. **Phase 5 simulation is intentionally single-threaded; Phase 6 introduces concurrent simulation workers.** No mutexes or threads were added.
+
+**Discrete-event model and simulation clock:** the clock (`SimTime`, a `double` in abstract time units) jumps straight from one event to the next. Nothing sleeps, waits or reads a wall clock; a run over 10^9 time units costs only the processing of its events (tested). The only events are `ConnectionArrival` and `ConnectionRelease`.
+
+**Event model and ordering:** `SimulationEvent{time, type, connection, sequence}` in an `EventQueue` (`std::priority_queue`). Deterministic total order: (1) earlier time first; (2) at equal times by type: **releases before arrivals**, so capacity freed at `t` is usable by a request arriving at `t`; (3) at equal time and type, by sequence number (scheduling order). Events with negative/NaN/infinite times are rejected.
+
+**Request generation** (`RequestGenerator`, testable on its own): produces `GeneratedRequest{arrival, ConnectionRequest, lifetime}`. Ids are 1, 2, 3, ... in generation order. Source is uniform over the topology's nodes and the destination uniform over the *other* nodes, so **source ≠ destination always; self-connections are never generated** (a Phase 4 connection needs at least one link). Demand is uniform in `[minCapacityChannels, maxCapacityChannels]`. `SimulationConfig::routing` (metric, hop/cost limits, blocked elements) is copied into every request. Draw order per request: gap, source, destination, capacity, lifetime. Every random quantity is drawn at generation time, so **the workload does not depend on the network's reaction**: the same seed gives the same requests on a roomy and a congested network (tested).
+
+**Arrival distribution:** `arrivalRate` λ ≥ 0 requests per time unit. `Timing::Exponential`: inter-arrival gaps are exponential with mean 1/λ (a Poisson process of rate λ). `Timing::Fixed`: a request exactly every 1/λ. λ = 0 means no requests. Arrival times are strictly increasing (a zero or absorbed gap is bumped to the next representable time).
+
+**Lifetime distribution:** `meanLifetime` > 0; `Timing::Exponential` (mean) or `Timing::Fixed` (exact). An accepted connection's release event is scheduled at `arrival + lifetime` (clamped to the largest finite double so absurd values cannot overflow).
+
+**RNG/seed behavior:** `std::mt19937_64` seeded from `SimulationConfig::seed`, with `std::exponential_distribution` and `std::uniform_int_distribution` behind a small `Rng` wrapper. No `rand()`. The same seed gives the same sequence for a given compiler and standard library; the standard fixes the engine but not the distributions' algorithms, so exact random values may differ between standard-library implementations. Tests therefore check reproducibility and ranges, never hard-coded random numbers.
+
+**Simulation termination:** events are processed in order while `time <= endTime`; arrivals are generated only up to `endTime` (and `maxRequests` if set). Releases beyond `endTime` are not processed (those connections are still active at the end). `maxRequests`, if set, caps the number of generated requests; if the cap is reached and every scheduled release occurred before `endTime`, the run ends at its last event (`duration` = that time), otherwise at `endTime`. Zero duration, zero rate, zero cap, empty or single-node topologies all return valid results. A scripted run ignores arrivals after `endTime`.
+
+**Processing:** *Arrival* → `ConnectionManager::establish`; success schedules the release and records path hops/cost; failure records the `ErrorCode` as the rejection reason. *Release* → `ConnectionManager::release` of exactly the stored connection (never rerouted). No allocation logic exists in the simulator itself. At the end the engine checks that `ConnectionManager::validate()` is clean and that its own incremental channel/connection counts equal the `ResourceManager`'s; a mismatch is returned as `InconsistentState`.
+
+**Metrics (`SimulationMetrics`, plain comparable data, no dependency on the API layer).** With R = total requests, a connection of demand d over h links holds d·h channel-links, and capacity = sum of every link's configured channels:
+```text
+acceptanceRate        = acceptedRequests / R                         (0 if R = 0)
+blockingRate          = rejectedRequests / R                         (0 if R = 0)
+averageUtilization    = ∫ allocated(t) dt over [0, duration]  /  (totalCapacityChannels · duration)   (0 if either factor is 0)
+                        — a TIME-weighted average (rectangles between events), not an average over events
+peakAllocatedChannels = max allocated(t), observed after each processed event
+averagePathCost, averageHopCount = mean over accepted requests (0 if none); cost is in each request's routing metric
+maxHopCount, peakActiveConnections, activeConnectionsAtEnd, totalReleases, eventsProcessed
+finalAllocatedChannels, finalAvailableChannels, totalCapacityChannels, rejectionsByReason (per ErrorCode), duration
+```
+`SimulationResult` also holds the seed and an optional per-event `trace` (`recordTrace`, off by default) with time, type, connection, endpoints, demand, success, rejection reason and hops.
+
+**Determinism:** same topology + config + seed gives an `==` result: identical request sequence, event order, accept/reject outcomes, trace and metrics (tested by comparing the full traces and metrics of two runs). Different seeds change the workload (asserted on the generated arrival times/endpoints, not that every seed always differs).
+
+**Tests (74 new, in `SimulationPrimitivesTests.cpp`, `RequestGeneratorTests.cpp`, `SimulationEngineTests.cpp`):**
+- *RNG (6):* same seed → same sequence, different seeds differ, ranges, full coverage of an integer range, exponential sample mean, precondition errors.
+- *Events (8) and config (3):* chronological order, equal-time ordering (releases before arrivals), sequence tie-break independent of connection id, sequence numbers, time beats type, far-future event, invalid times, empty queue; config defaults, invalid values, boundaries.
+- *Request generator (18):* valid distinct endpoints (self-connections never generated), every node used, capacity bounds and coverage, sequential ids, strictly increasing arrivals, constraints copied, same seed → same workload, different seed → different workload, workload independent of links/capacity, cap, horizon, zero rate/duration/cap, fewer than two nodes, invalid config, exact `Fixed` timing, exponential means (20,000 samples).
+- *Hand-computed fixtures (3):* (a) scripted A–B–C line with 4 requests: exact counts, rejection reason, peak 16, utilization 0.41 (integral 82 / (20·10)), hop/cost averages 4/3, releases, active count, and the exact event order including the same-time release-before-arrival; (b) a generated run with fixed timings on a 2-node link: 10 requests, accepted #1,#2,#4,#5,#7,#8,#10, rejected #3,#6,#9, utilization 0.58 (integral 58 / 100), 5 releases, 15 events.
+- *Scripted and generated edge cases (18 + 10):* idle network, one accepted, one rejected, release timing, `NoFeasibleRoute`, `NoRoute`, unknown node and duplicate id (rejected, nothing allocated), resource reuse after release at the same instant, same-time arrivals in script order, arrivals after/at the horizon, very short lifetimes, 4-billion-channel links (no overflow), overflowing lifetime, invalid scripts, zero duration, trace on/off, repeatability; empty topology, single node, zero rate, zero duration, zero cap, invalid config, no links, cap-ended vs. horizon-ended runs, virtual time (10^9 units).
+- *Determinism (4):* same seed → identical full result, different seeds differ, one engine object reused, workload identical across networks of different capacity.
+- *Congestion and large runs (4):* a saturated 3×3 grid (blocking > 0.5, utilization > 0.5), a light load with zero blocking, routing configuration applied (hop limit 1), and a **10×10 grid (100 nodes, 180 links) with ~5000 requests and ~10,000 events** whose invariants are all checked: accepted + rejected = total, rejection reasons sum to the rejections, events = requests + releases, active = accepted − releases, allocated + available = capacity, and the final state recomputed independently from the trace matches the engine's.
+
+**Mutation checks performed:** swapping the same-time priority (4 tests failed), integrating utilization incorrectly (3), and replacing the sequence tie-break with connection id (2) were all caught; sources restored and verified identical.
+
+**Test count and results:** 328 total = 43 Phase 1 + 78 Phase 2 + 74 Phase 3 + 59 Phase 4 + 74 Phase 5 (earlier tests unchanged). Clean rebuild and `ctest`: Debug 328/328 passed, Release 328/328 passed. Zero warnings under warnings-as-errors. C++20 confirmed in the compile commands. Toolchain unchanged (MSVC 19.44.35229, CMake 3.31.6, Ninja 1.13.0); only MSVC was tested.
+
+**Important design decisions:** workload generation is separate from, and independent of, network state; an explicit-script entry point next to the generator so exact scenarios can be verified by hand; releases ordered before arrivals at equal times; time-weighted utilization; a stateless engine with per-run state; reasons for rejection kept per `ErrorCode`; the engine cross-checks its bookkeeping against the resource layer at the end of every run.
+
+**Known limitations:**
+- Single-threaded (Phase 6 adds concurrent workers); no failure/recovery events (Phase 7); no benchmarking (Phase 10).
+- Only Poisson (or fixed) arrivals and exponential (or fixed) lifetimes, uniform endpoint selection and uniform demand: no traffic matrices, hotspots or other distributions.
+- No warm-up period: metrics include the initial transient from an empty network.
+- No confidence intervals or multi-run aggregation.
+- Utilization counts channel-links over total channels, so long routes weigh more; it is not a per-link average.
+- Exact random sequences are implementation-specific across standard libraries.
+- Times are `double`, so equal-time ordering relies on exactly equal values (e.g. fixed timings that are exactly representable).
+- Not tested with GCC/Clang.
+
+**Commit:** `feat: implement OpticalNet phase 5 simulation engine` on `main` (the hash is in `git log`; a commit cannot contain its own hash).
+
+**Next phase:** Phase 6 — Multithreaded Simulation
 
 ## Phase 6 Summary
 Not started
