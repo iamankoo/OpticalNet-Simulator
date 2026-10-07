@@ -32,11 +32,13 @@ struct NodeTag {};
 struct LinkTag {};
 struct TransceiverTag {};
 struct SwitchingElementTag {};
+struct ConnectionTag {};
 
 using NodeId = StrongId<NodeTag>;
 using LinkId = StrongId<LinkTag>;
 using TransceiverId = StrongId<TransceiverTag>;
 using SwitchingElementId = StrongId<SwitchingElementTag>;
+using ConnectionId = StrongId<ConnectionTag>;
 
 }  // namespace opticalnet
 

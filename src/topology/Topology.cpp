@@ -218,6 +218,9 @@ std::string_view toString(IssueCode code) noexcept {
         case IssueCode::PortCountExceeded: return "PortCountExceeded";
         case IssueCode::IsolatedNode: return "IsolatedNode";
         case IssueCode::DisconnectedTopology: return "DisconnectedTopology";
+        case IssueCode::AllocationExceedsCapacity: return "AllocationExceedsCapacity";
+        case IssueCode::AllocationOnUnknownLink: return "AllocationOnUnknownLink";
+        case IssueCode::ConnectionAllocationMismatch: return "ConnectionAllocationMismatch";
     }
     return "Unknown";
 }

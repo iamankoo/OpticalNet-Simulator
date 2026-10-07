@@ -11,6 +11,8 @@ std::string_view toString(ErrorCode code) noexcept {
         case ErrorCode::ParseError: return "ParseError";
         case ErrorCode::NoRoute: return "NoRoute";
         case ErrorCode::NoFeasibleRoute: return "NoFeasibleRoute";
+        case ErrorCode::InsufficientCapacity: return "InsufficientCapacity";
+        case ErrorCode::InconsistentState: return "InconsistentState";
     }
     return "Unknown";
 }

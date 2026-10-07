@@ -22,8 +22,11 @@ enum class LinkDirection {
 // how much capacity exists, not how much is in use.
 //
 // Direction: a link is bidirectional by default, modelling a physical fiber pair
-// carrying one direction each; capacity and cost then apply per direction.
-// A Directed link models a one-way strand (source -> target only).
+// carrying one direction each; cost applies to each traversal. A Directed link models a
+// one-way strand (source -> target only).
+//
+// Capacity: `capacityChannels` is a single pool per link, shared by both directions of a
+// bidirectional link (a deliberately conservative model; see ResourceManager).
 //
 // Cost: `administrativeCost` is a positive, unitless weight chosen by the operator
 // (default 1). Other routing metrics (hops, distance) derive from the link itself.

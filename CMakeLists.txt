@@ -64,6 +64,15 @@ target_link_libraries(opticalnet_routing
   PUBLIC opticalnet::topology
   PRIVATE opticalnet_warnings)
 
+add_library(opticalnet_resources STATIC
+  src/resources/ResourceManager.cpp
+  src/resources/ConnectionManager.cpp
+)
+add_library(opticalnet::resources ALIAS opticalnet_resources)
+target_link_libraries(opticalnet_resources
+  PUBLIC opticalnet::routing
+  PRIVATE opticalnet_warnings)
+
 if(OPTICALNET_BUILD_TESTS)
   enable_testing()
   add_subdirectory(tests)

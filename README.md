@@ -2,7 +2,7 @@
 
 An optical network simulation and validation platform that models network topology, routing, resource allocation, concurrent simulation, failures/recovery, and network validation.
 
-> **Status: Phases 1-3 of 10 complete.** The core domain model (network, nodes, fiber links, transceivers, switching elements), the topology/graph engine (adjacency lists, connectivity, validation, JSON topology loading/export) a routing engine (Dijkstra shortest path with cost metrics, hop/cost/capacity constraints and deterministic tie-breaking) and the build/test foundation exist. Resource allocation, simulation, concurrency, failures/recovery, the validation framework and the Python/FastAPI layer are **not implemented yet**. See [summary.md](summary.md) for current progress.
+> **Status: Phases 1-4 of 10 complete.** The core domain model (network, nodes, fiber links, transceivers, switching elements), the topology/graph engine (adjacency lists, connectivity, validation, JSON topology loading/export) a routing engine (Dijkstra shortest path with cost metrics, hop/cost/capacity constraints and deterministic tie-breaking) and the build/test foundation exist. Resource and connection management (atomic per-link channel allocation, connection establish/release) also exists. Simulation, concurrency, failures/recovery, the validation framework and the Python/FastAPI layer are **not implemented yet**. See [summary.md](summary.md) for current progress.
 
 ## Planned design (see TECHSTACK.md)
 
@@ -28,6 +28,10 @@ Topologies can be described in JSON (see `configs/ring4.json` and `configs/nsfne
 ## Routing
 
 `RoutingEngine::findPath(topology, source, destination, constraints)` returns the cheapest feasible `Path` (nodes, links, cost, hops) under a chosen metric (hop count, distance or administrative cost), honouring link direction and parallel links. Routing only finds paths; reserving capacity along them arrives with resource management (Phase 4).
+
+## Resources and connections
+
+`ConnectionManager` turns a `ConnectionRequest` into an active connection: it routes around links that lack free capacity, reserves the channels on every link of the path atomically (all links or none), and records the exact path so `release` returns precisely what was taken. `ResourceManager` holds the dynamic per-link allocation state; the `Topology` stays the static structure. This layer is single-threaded for now.
 
 ## Roadmap
 

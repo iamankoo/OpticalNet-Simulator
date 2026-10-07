@@ -17,6 +17,8 @@ enum class ErrorCode {
     ParseError,           // configuration text is malformed or violates the schema
     NoRoute,              // destination is unreachable in the topology
     NoFeasibleRoute,      // a route exists, but none satisfies the routing constraints
+    InsufficientCapacity, // a route exists, but a link on it lacks the free capacity requested
+    InconsistentState,    // resource bookkeeping contradicts the requested operation (e.g. over-release)
 };
 
 [[nodiscard]] std::string_view toString(ErrorCode code) noexcept;

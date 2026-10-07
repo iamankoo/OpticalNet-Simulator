@@ -48,13 +48,24 @@ Network
 
 ConnectionRequest
         ↓
-RoutingEngine  (reads Topology; constraints supplied by the caller)
+ConnectionManager  (connection lifecycle; owns the ResourceManager)
+        ↓
+RoutingEngine  (reads Topology; asks "is this link usable?" through RoutingConstraints::linkFilter)
         ↓
 Path
         ↓
-ResourceManager  (allocate / release)
+ResourceManager  (allocate / release channels per link; atomic)
         ↓
-SimulationState  (connections, metrics, clock)
+Active Connection  (request + exact path + demand)  →  later: SimulationState (clock, metrics)
+```
+
+Who owns what:
+
+```text
+Topology           = static structure (referenced by the others, never owned by them)
+RoutingEngine      = path calculation, stateless
+ResourceManager    = dynamic resource state (channels allocated per link)
+ConnectionManager  = connection lifecycle (registry, establish, release)
 ```
 
 ## Subsystems
@@ -93,8 +104,8 @@ Topology ──► RoutingEngine ──► Path ──► (Phase 4) ResourceMana
 ### Path representation (Phase 3, implemented)
 `Path` — ordered node sequence, ordered **link** sequence (the actual fibers, which matter with parallel links), total cost, the `CostMetric` it is expressed in, and hop count. Immutable value type returned by routing and consumed by the resource manager.
 
-### Resource manager (Phase 4)
-`ResourceManager` tracks per-link used capacity. `allocate(path, demand)` is atomic (all links or none, with rollback); `release(connection)` is the inverse. A consistency validator asserts no over-allocation and no leaks.
+### Resource manager (Phase 4, implemented)
+`ResourceManager` stores only the **allocated** channel count per link; each link's total comes from the `Topology` on demand, so static capacity lives in one place. A connection of demand N uses N channels on every link of its path; a bidirectional link's channels are one shared pool. `allocate(links, demand)` and `release(links, demand)` are atomic: every link is validated first and state is changed only if all checks pass (no rollback needed). `validate()` reports allocation above capacity or on links the topology no longer has. Single-threaded in Phase 4; Phase 6 adds synchronisation around it.
 
 ### Connection/request lifecycle
 ```text
@@ -103,7 +114,7 @@ Requested ──route ok──► Routed ──allocate ok──► Established 
     └── no path ──► Rejected   └── no capacity ──► Rejected
 Established ──element failure──► Rerouted | Dropped      (Phase 7)
 ```
-`ConnectionRequest` is the input; `Connection` is the established record (request, path, allocated resources, state).
+`ConnectionRequest` is the input; `Connection` is the established record (request, the exact path, demand). Phase 4 implements establish and release: `ConnectionManager::establish` routes with a capacity-aware `linkFilter`, allocates the path atomically, then registers the connection; `release` returns exactly the stored links and demand. Connections have no automatic expiry (departure scheduling is Phase 5), and rerouting after failures is Phase 7.
 
 ### Simulation engine (Phase 5)
 Discrete-event simulation: a time-ordered event queue of arrivals, departures (and later failures/repairs). `SimulationConfig` (topology, workload, seed, limits) drives a `Simulation` whose `SimulationState` holds the clock, active connections and metrics. Randomness comes only from a seeded `std::mt19937_64`, so a fixed seed reproduces identical results (**deterministic mode**).

@@ -10,15 +10,15 @@ Source-of-truth documents: [Phases.md](Phases.md), [ARCHITECTURE.md](ARCHITECTUR
 
 ## Current status
 
-- **Implementation status:** Phases 1 (core domain model, build/test foundation), 2 (topology & graph engine) and 3 (routing engine) are implemented and tested. Phases 4–10 are not started.
-- **Current phase:** Phase 3 complete; ready for Phase 4
-- **Completed phases:** 1, 2, 3
+- **Implementation status:** Phases 1 (core domain model, build/test foundation), 2 (topology & graph engine), 3 (routing engine) and 4 (resource & connection management) are implemented and tested. Phases 5–10 are not started.
+- **Current phase:** Phase 4 complete; ready for Phase 5
+- **Completed phases:** 1, 2, 3, 4
 - **In-progress phase:** None
-- **Pending phases:** 4–10
-- **Key implemented components:** `Network`, `Node`, `FiberLink`, `Transceiver`, `SwitchingElement`, `INetworkElement`, strong IDs, `Result<T>`/`Error`, `Topology`, `Adjacency`, `ValidationReport`, `CostMetric`/`linkCost`, JSON topology loader/exporter, `Path`, `RoutingConstraints`, `IRoutingAlgorithm`, `DijkstraRouter`, `RoutingEngine`
-- **Current tests/status:** 195 GoogleTest cases (43 Phase 1 + 78 Phase 2 + 74 Phase 3), all passing under CTest in Release and Debug (MSVC, warnings-as-errors)
-- **Known limitations:** See the Phase 1–3 summaries. No resource allocation, simulation, concurrency, failures, validation framework, or Python layer yet.
-- **Next phase:** Phase 4 — Resource & Connection Management
+- **Pending phases:** 5–10
+- **Key implemented components:** `Network`, `Node`, `FiberLink`, `Transceiver`, `SwitchingElement`, `INetworkElement`, strong IDs, `Result<T>`/`Error`, `Topology`, `Adjacency`, `ValidationReport`, `CostMetric`/`linkCost`, JSON topology loader/exporter, `Path`, `RoutingConstraints`, `IRoutingAlgorithm`, `DijkstraRouter`, `RoutingEngine`, `ConnectionRequest`, `Connection`, `ConnectionManager`, `ResourceManager`, `LinkUsage`
+- **Current tests/status:** 254 GoogleTest cases (43 Phase 1 + 78 Phase 2 + 74 Phase 3 + 59 Phase 4), all passing under CTest in Release and Debug (MSVC, warnings-as-errors)
+- **Known limitations:** See the Phase 1–4 summaries. No simulation, concurrency, failures, validation framework, or Python layer yet.
+- **Next phase:** Phase 5 — Simulation Engine
 
 ## Phase 1 Summary
 
@@ -84,7 +84,7 @@ Source-of-truth documents: [Phases.md](Phases.md), [ARCHITECTURE.md](ARCHITECTUR
 
 **Graph representation:** adjacency lists, `unordered_map<NodeId, vector<Adjacency>>`, with one index of edges traversable *from* a node (`outgoing`, what Dijkstra will use) and one of all touching links (`incident`). Each list is sorted by `LinkId`, so iteration is deterministic regardless of insertion order. Reaching a node's list is O(1); insert and removal are O(degree). Lists are returned as `std::span<const Adjacency>` (no copies; invalidated by mutation).
 
-**FiberLink direction decision:** links are **bidirectional by default** and may be explicitly **`Directed`** (source to target only). Why: a physical optical link is normally a fiber pair carrying one direction each, so bidirectional is the natural default, while directed links let later phases model one-way strands or asymmetric failures without a redesign. Representation: `FiberLink::direction()`; a bidirectional link appears in the `outgoing` list of both endpoints, a directed link only at its source; both appear in `incident`. Capacity and cost apply per direction. Phase 3 routing will iterate `outgoing(node)` and never has to interpret direction itself; `FiberLink::allowsTraversal(from, to)` is available for checks.
+**FiberLink direction decision:** links are **bidirectional by default** and may be explicitly **`Directed`** (source to target only). Why: a physical optical link is normally a fiber pair carrying one direction each, so bidirectional is the natural default, while directed links let later phases model one-way strands or asymmetric failures without a redesign. Representation: `FiberLink::direction()`; a bidirectional link appears in the `outgoing` list of both endpoints, a directed link only at its source; both appear in `incident`. Cost applies to each traversal; capacity is one pool per link shared by both directions (clarified in Phase 4). Phase 3 routing will iterate `outgoing(node)` and never has to interpret direction itself; `FiberLink::allowsTraversal(from, to)` is available for checks.
 
 **Link/cost model:** `FiberLink::administrativeCost` is positive, finite, default 1, validated at creation. `CostMetric` selects the edge weight (`HopCount` = 1, `Distance` = length in km, `Administrative` = the operator cost); `linkCost(link, metric)` reads it. Phase 3 will choose the metric; no path search exists in Phase 2.
 
@@ -169,12 +169,80 @@ Source-of-truth documents: [Phases.md](Phases.md), [ARCHITECTURE.md](ARCHITECTUR
 - No transceiver or switching-element feasibility beyond the distance limit and port counts from Phase 2.
 - Not tested with GCC/Clang.
 
-**Commit:** `feat: implement OpticalNet phase 3 routing engine` on `main` (the hash is in `git log`; a commit cannot contain its own hash).
+**Commit:** `18a36297d2fe00333bd81d7be56703c57b4ffcb4` — `feat: implement OpticalNet phase 3 routing engine`.
 
-**Next phase:** Phase 4 — Resource & Connection Management
+**Next phase:** Phase 4 — Resource & Connection Management (completed below)
 
 ## Phase 4 Summary
-Not started
+
+**Status:** Completed
+
+**Objective:** Turn "a feasible path exists" (Phase 3) into "resources can actually be reserved for this connection and returned correctly later": dynamic capacity state, atomic allocation and release, and a connection lifecycle.
+
+**What was implemented** (`include/opticalnet/resources/`, `src/resources/`, library target `opticalnet::resources`, depends on `opticalnet::routing`):
+- `ConnectionId` (a `StrongId`, added to `Ids.hpp`).
+- `ConnectionRequest` — id, source, destination, `capacityChannels`, `RoutingConstraints`; `validate()`.
+- `LinkUsage{total, allocated, available}`.
+- `ResourceManager` — dynamic per-link allocation state.
+- `Connection` — an immutable record of an established connection.
+- `ConnectionManager` — establish / release / registry.
+- New `ErrorCode`s `InsufficientCapacity` and `InconsistentState`; new `IssueCode`s `AllocationExceedsCapacity`, `AllocationOnUnknownLink`, `ConnectionAllocationMismatch` (reusing the Phase 2 `ValidationReport`).
+
+**Separation of responsibilities:**
+```text
+Topology           static structure (incl. each link's total capacity)   referenced, never owned by the others
+RoutingEngine      path calculation, stateless
+ResourceManager    dynamic state: channels allocated per link
+ConnectionManager  connection lifecycle; owns a ResourceManager and a RoutingEngine
+```
+
+**Resource model:** capacity is counted in **channels per link**; a connection of demand N uses N channels on every link of its path. A link's channels form **one pool shared by both directions** of a bidirectional link (conservative; Phase 2's earlier "per direction" remark was corrected). Wavelength/spectrum assignment is not modelled. `ResourceManager` stores only `allocated` counts (`map<LinkId, uint32>`, entries removed at zero); `total` is read from the `Topology` on demand, so static capacity exists in exactly one place, and `available = total - allocated` is derived, never stored. Rules enforced: demand > 0, `allocated <= total`, `available` never negative (counters are unsigned and every subtraction is pre-checked; `usage()` clamps `available` to 0 if a topology change ever leaves `allocated > total`), no release beyond what is allocated.
+
+**ResourceManager:** `usage`, `hasCapacity`, `allocated`, `allocations`, `usages`; network-wide `totalCapacity/totalAllocated/totalAvailable`; `canAllocate`, `allocate`, `release`; `validate()`. It references the topology (which must outlive it) and does not own it.
+
+**Atomicity strategy:** two-step allocate/release. The request is first merged into per-link needs (a link repeated in the argument counts repeatedly), every link is validated (exists, enough free channels / enough allocated), and only then are counters changed. The mutation step cannot fail, so every call is all-or-nothing and no rollback is needed. `ConnectionManager` allocates *before* registering a connection, so a failure leaves neither capacity nor registry changed.
+
+**Routing/resource integration:** `establish()` copies the request's constraints and installs a composed `linkFilter`: "link has `demand` free channels" AND the caller's own filter. Routing therefore avoids full links through the Phase 3 seam without holding any resource state, and no new routing algorithm exists. If routing then fails with `NoFeasibleRoute`, one extra search without the capacity filter distinguishes `InsufficientCapacity` (capacity is the only obstacle) from a genuine `NoFeasibleRoute`/`NoRoute`.
+
+**Connection model:** `Connection` keeps the request, the exact `Path`, and the demand, so release never recomputes a route (the topology may have changed; parallel links make node sequences ambiguous). Created only by `ConnectionManager`.
+
+**ConnectionManager:** `establish(request)`; `establishOnPath(request, path)` for a caller-supplied path (checks endpoints, existence of every link, contiguity and link direction); `release(id)`; `find`, `contains`, `activeCount`, `activeConnections()` (read-only `map` ordered by id); `resources()`; `validate()` (resource checks plus a cross-check that per-link allocation equals what the active connections hold). Duplicate ids are rejected; a request with `source == destination` is rejected (a connection needs at least one link). No automatic expiry: connections live until `release`.
+
+**Release behavior:** releases exactly the stored links and demand, then removes the connection. A second release is `NotFound` and changes nothing. Release still works if a link has since been removed from the topology (it heals the state; `validate()` reports the stale allocation until then). If bookkeeping were ever inconsistent, `release` returns `InconsistentState` and keeps the connection registered.
+
+**Capacity accounting:** per link (`LinkUsage`) and network-wide totals, as above.
+
+**Error handling:** all via `Result`, none throw. `InvalidArgument` (zero capacity, `source == destination`, empty path, path not matching the request or not walkable), `NotFound` (unknown node, link or connection), `DuplicateId`, `NoRoute`, `NoFeasibleRoute`, `InsufficientCapacity`, `InconsistentState`. Negative capacity cannot be expressed (unsigned type, checked by a `static_assert`).
+
+**Concurrency:** the managers are **single-threaded**; no mutexes were added. All mutable state sits behind `ResourceManager`/`ConnectionManager` methods, and `ConnectionManager` owns its `ResourceManager`, so Phase 6 can add one lock around the manager (or finer locking inside) without changing the API.
+
+**Tests (59 new, `ResourceManagerTests.cpp`, `ConnectionManagerTests.cpp`):**
+- *Allocation/accounting:* single- and multi-link allocation, exact-capacity boundary, overflow-safe huge demands, three connections filling a link (30+40+30) then rejecting a fourth, `allocated + available == total` on every link and in the totals after every operation, shared pool for both directions.
+- *Atomicity (mandatory):* an early link has room but the last link does not → every link unchanged; same for failure on the first link, an unknown link mid-path, a repeated link in one call, a failed (over-)release, and an explicit path whose second link is full.
+- *Release:* exact restore, partial release, reuse (allocate → release → allocate), over-release, double release, unknown connection.
+- *Routing integration:* shortest route lacks capacity → alternative route chosen; shortest route returns after release; every route full → `InsufficientCapacity`; caller filter combined with the capacity filter; two managers over one topology are independent.
+- *Parallel links:* the exact chosen `LinkId` is allocated and released, the parallel link is untouched.
+- *Registry/failures:* insert, lookup, ordered iteration, duplicates (state unchanged), missing connection, invalid requests (zero capacity, same endpoints, unknown nodes), invalid explicit paths (trivial, wrong endpoints, unknown link, non-contiguous, directed link backwards), release uses stored links even after the topology gained a cheaper link or lost the allocated one.
+- *Consistency:* `validate()` clean after normal use; detects allocation on a removed link and allocation above capacity after a link is replaced with a smaller one.
+- *Large/stress:* (1) 20,000 random allocate/release operations over 2000 links checked against an independent shadow ledger (accepted > 3000, rejected > 500 so capacity limits are really hit); (2) a 20×20 grid (400 nodes, 760 links, 8 channels each) with 4000 random establish/release operations: after the run the total allocation equals Σ demand × hops of the active connections, no link exceeds capacity, `validate()` is clean throughout, and releasing everything drains the network to zero.
+
+**Mutation checks performed:** partial allocation (checking and mutating link by link) was caught by 4 tests; partial release by 1; removing the capacity filter from routing by 5. Sources were restored and verified identical afterwards.
+
+**Test count and results:** 254 total = 43 Phase 1 + 78 Phase 2 + 74 Phase 3 + 59 Phase 4 (earlier tests unchanged). Clean rebuild and `ctest`: Debug and Release both 254/254 passed. Zero warnings under warnings-as-errors. C++20 confirmed in the compile commands. Toolchain unchanged (MSVC 19.44.35229, CMake 3.31.6, Ninja 1.13.0); only MSVC was tested.
+
+**Important design decisions:** dynamic state stored apart from the topology, which keeps one copy of static capacity; allocate-after-check rather than rollback; routing coupled to resources only through `linkFilter`; the `Connection` stores its own links and demand; one owner (`ConnectionManager`) for the whole lifecycle so a single lock suffices later; `establishOnPath` kept because Phase 7 needs to place precomputed backup paths.
+
+**Known limitations:**
+- Single-threaded; not safe for concurrent use until Phase 6.
+- Capacity is a plain channel count: no wavelength identity, continuity or fragmentation, and one pool per link regardless of direction.
+- `ResourceManager` and `ConnectionManager` hold pointers to the `Topology`, which must outlive them. Topology edits while connections exist are tolerated but can leave stale allocations (reported by `validate()`, healed by release).
+- No connection lifetime, expiry, scheduling or blocking statistics (Phase 5); no re-routing of active connections (Phase 7).
+- `totalCapacity()` and `totalAvailable()` scan all links on each call.
+- Not tested with GCC/Clang.
+
+**Commit:** `feat: implement OpticalNet phase 4 resource management` on `main` (the hash is in `git log`; a commit cannot contain its own hash).
+
+**Next phase:** Phase 5 — Simulation Engine
 
 ## Phase 5 Summary
 Not started
