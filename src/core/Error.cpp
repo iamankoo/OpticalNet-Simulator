@@ -9,6 +9,8 @@ std::string_view toString(ErrorCode code) noexcept {
         case ErrorCode::NotFound: return "NotFound";
         case ErrorCode::ConstraintViolation: return "ConstraintViolation";
         case ErrorCode::ParseError: return "ParseError";
+        case ErrorCode::NoRoute: return "NoRoute";
+        case ErrorCode::NoFeasibleRoute: return "NoFeasibleRoute";
     }
     return "Unknown";
 }

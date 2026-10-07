@@ -19,8 +19,12 @@ add_executable(opticalnet_unit_tests
   unit/TopologyGraphTests.cpp
   unit/TopologyValidationTests.cpp
   unit/TopologyIoTests.cpp
+  unit/PathTests.cpp
+  unit/RoutingBasicTests.cpp
+  unit/RoutingConstraintTests.cpp
+  unit/RoutingPropertyTests.cpp
 )
 target_compile_definitions(opticalnet_unit_tests PRIVATE
   OPTICALNET_CONFIG_DIR="${PROJECT_SOURCE_DIR}/configs")
-target_link_libraries(opticalnet_unit_tests PRIVATE opticalnet::topology opticalnet::core opticalnet_warnings GTest::gtest_main)
+target_link_libraries(opticalnet_unit_tests PRIVATE opticalnet::routing opticalnet::topology opticalnet::core opticalnet_warnings GTest::gtest_main)
 gtest_discover_tests(opticalnet_unit_tests)

@@ -48,7 +48,7 @@ Network
 
 ConnectionRequest
         ↓
-RoutingEngine  (reads Topology + availability)
+RoutingEngine  (reads Topology; constraints supplied by the caller)
         ↓
 Path
         ↓
@@ -80,11 +80,18 @@ Static structure (`Network`) is deliberately separated from dynamic state (`Reso
 - **Validation:** structural integrity (endpoints exist, unique ids, no self-links) is guaranteed by construction. `validate()` reports whole-topology rules: node degree vs. switching-element port count (Error), isolated nodes and disconnected topology (Warnings). "Valid" and "connected" are separate questions.
 - **JSON loading/export:** `loadTopologyFromJson/File`, `topologyToJson` (schema documented in `TopologyIo.hpp`; strict, unknown keys rejected). After validation the topology is treated as immutable during a simulation, except for failure state (see below).
 
-### Routing engine (Phase 3)
-`IRoutingAlgorithm` interface; first implementation is Dijkstra with pluggable cost metric and a feasibility/constraint filter (reach, free capacity, failed elements). Routing is a pure function of (topology, availability view, request) — it never mutates state.
+### Routing engine (Phase 3, implemented)
+```text
+Topology ──► RoutingEngine ──► Path ──► (Phase 4) ResourceManager
+```
+`RoutingEngine` holds an `IRoutingAlgorithm` (`DijkstraRouter` by default) and is handed the `Topology` on every call; it never owns the topology, never owns resource state and never reserves anything. `findPath(topology, source, destination, RoutingConstraints)` returns a `Result<Path>`.
 
-### Path representation
-`Path` — ordered links/nodes, total cost, and helpers (hop count, length). Immutable value type returned by routing and consumed by the resource manager.
+- **Dijkstra** runs over `Topology::outgoing()` with a binary heap, so directed links are honoured and parallel links are separate edges. Ties break deterministically (lower cost, fewer hops, smaller predecessor `NodeId`, smaller `LinkId`).
+- **Constraints** take part in the search: `maxCost` (in the units of the selected `CostMetric`; optical reach is a `Distance` limit), `maxHops` (exact), minimum static link capacity, blocked nodes/links, and an optional `linkFilter` predicate. The filter is the seam for Phase 4: the resource manager supplies "link has free capacity" without routing holding any resource state. Failed elements (Phase 7) will be passed the same way.
+- **Errors:** `NotFound` (unknown endpoint), `InvalidArgument` (bad constraints), `NoRoute` (unreachable), `NoFeasibleRoute` (reachable but infeasible under the constraints). `source == destination` yields the trivial path (one node, no links, cost 0).
+
+### Path representation (Phase 3, implemented)
+`Path` — ordered node sequence, ordered **link** sequence (the actual fibers, which matter with parallel links), total cost, the `CostMetric` it is expressed in, and hop count. Immutable value type returned by routing and consumed by the resource manager.
 
 ### Resource manager (Phase 4)
 `ResourceManager` tracks per-link used capacity. `allocate(path, demand)` is atomic (all links or none, with rollback); `release(connection)` is the inverse. A consistency validator asserts no over-allocation and no leaks.

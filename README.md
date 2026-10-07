@@ -2,7 +2,7 @@
 
 An optical network simulation and validation platform that models network topology, routing, resource allocation, concurrent simulation, failures/recovery, and network validation.
 
-> **Status: Phases 1-2 of 10 complete.** The core domain model (network, nodes, fiber links, transceivers, switching elements), the topology/graph engine (adjacency lists, connectivity, validation, JSON topology loading/export) and the build/test foundation exist. Routing, resource allocation, simulation, concurrency, failures/recovery, the validation framework and the Python/FastAPI layer are **not implemented yet**. See [summary.md](summary.md) for current progress.
+> **Status: Phases 1-3 of 10 complete.** The core domain model (network, nodes, fiber links, transceivers, switching elements), the topology/graph engine (adjacency lists, connectivity, validation, JSON topology loading/export) a routing engine (Dijkstra shortest path with cost metrics, hop/cost/capacity constraints and deterministic tie-breaking) and the build/test foundation exist. Resource allocation, simulation, concurrency, failures/recovery, the validation framework and the Python/FastAPI layer are **not implemented yet**. See [summary.md](summary.md) for current progress.
 
 ## Planned design (see TECHSTACK.md)
 
@@ -24,6 +24,10 @@ An optical network simulation and validation platform that models network topolo
 ## Topology configuration
 
 Topologies can be described in JSON (see `configs/ring4.json` and `configs/nsfnet.json`; schema in `include/opticalnet/topology/TopologyIo.hpp`) and loaded with `loadTopologyFromFile`. Links are bidirectional by default and can be marked `"direction": "directed"`.
+
+## Routing
+
+`RoutingEngine::findPath(topology, source, destination, constraints)` returns the cheapest feasible `Path` (nodes, links, cost, hops) under a chosen metric (hop count, distance or administrative cost), honouring link direction and parallel links. Routing only finds paths; reserving capacity along them arrives with resource management (Phase 4).
 
 ## Roadmap
 

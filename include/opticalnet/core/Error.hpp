@@ -15,6 +15,8 @@ enum class ErrorCode {
     NotFound,             // referenced object does not exist
     ConstraintViolation,  // operation would break a relationship between objects
     ParseError,           // configuration text is malformed or violates the schema
+    NoRoute,              // destination is unreachable in the topology
+    NoFeasibleRoute,      // a route exists, but none satisfies the routing constraints
 };
 
 [[nodiscard]] std::string_view toString(ErrorCode code) noexcept;

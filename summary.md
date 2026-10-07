@@ -10,15 +10,15 @@ Source-of-truth documents: [Phases.md](Phases.md), [ARCHITECTURE.md](ARCHITECTUR
 
 ## Current status
 
-- **Implementation status:** Phases 1 (core domain model, build/test foundation) and 2 (topology & graph engine) are implemented and tested. Phases 3–10 are not started.
-- **Current phase:** Phase 2 complete; ready for Phase 3
-- **Completed phases:** 1, 2
+- **Implementation status:** Phases 1 (core domain model, build/test foundation), 2 (topology & graph engine) and 3 (routing engine) are implemented and tested. Phases 4–10 are not started.
+- **Current phase:** Phase 3 complete; ready for Phase 4
+- **Completed phases:** 1, 2, 3
 - **In-progress phase:** None
-- **Pending phases:** 3–10
-- **Key implemented components:** `Network`, `Node`, `FiberLink`, `Transceiver`, `SwitchingElement`, `INetworkElement`, strong IDs, `Result<T>`/`Error`, `Topology`, `Adjacency`, `ValidationReport`, `CostMetric`/`linkCost`, JSON topology loader/exporter
-- **Current tests/status:** 121 GoogleTest cases (43 Phase 1 + 78 Phase 2), all passing under CTest in Release and Debug (MSVC, warnings-as-errors)
-- **Known limitations:** See the Phase 1 and Phase 2 summaries. No routing, resources, simulation, concurrency, failures, validation framework, or Python layer yet.
-- **Next phase:** Phase 3 — Routing Engine
+- **Pending phases:** 4–10
+- **Key implemented components:** `Network`, `Node`, `FiberLink`, `Transceiver`, `SwitchingElement`, `INetworkElement`, strong IDs, `Result<T>`/`Error`, `Topology`, `Adjacency`, `ValidationReport`, `CostMetric`/`linkCost`, JSON topology loader/exporter, `Path`, `RoutingConstraints`, `IRoutingAlgorithm`, `DijkstraRouter`, `RoutingEngine`
+- **Current tests/status:** 195 GoogleTest cases (43 Phase 1 + 78 Phase 2 + 74 Phase 3), all passing under CTest in Release and Debug (MSVC, warnings-as-errors)
+- **Known limitations:** See the Phase 1–3 summaries. No resource allocation, simulation, concurrency, failures, validation framework, or Python layer yet.
+- **Next phase:** Phase 4 — Resource & Connection Management
 
 ## Phase 1 Summary
 
@@ -103,7 +103,7 @@ Source-of-truth documents: [Phases.md](Phases.md), [ARCHITECTURE.md](ARCHITECTUR
 **Important design decisions:** single owner of the domain objects (`Topology` over `Network`) rather than a parallel graph structure; structural integrity enforced at the mutation boundary instead of by after-the-fact checks; deterministic ordering everywhere; routing metric choice deferred to Phase 3; `opticalnet_topology` depends on `opticalnet::core`, and JSON is not exposed in public headers.
 
 **Known limitations:**
-- No routing or path search (Phase 3); no resource usage tracking (Phase 4).
+- No routing or path search in this phase (added in Phase 3); no resource usage tracking (Phase 4).
 - Adjacency spans are invalidated by mutation; `Topology` is not thread-safe.
 - Failure state (failed links/nodes) is not modeled yet (Phase 7).
 - `validate()` checks only port counts, isolation and connectivity; transceiver-reach feasibility belongs to routing (Phase 3).
@@ -112,12 +112,66 @@ Source-of-truth documents: [Phases.md](Phases.md), [ARCHITECTURE.md](ARCHITECTUR
 - NSFNET link lengths are approximate.
 - Not tested with GCC/Clang.
 
-**Commit:** `feat: implement OpticalNet phase 2 topology engine` on `main` (the hash is in `git log`; a commit cannot contain its own hash).
+**Commit:** `fd640f5ec77f5aced2e9cc441c4dd727391d8a71` — `feat: implement OpticalNet phase 2 topology engine`.
 
-**Next phase:** Phase 3 — Routing Engine
+**Next phase:** Phase 3 — Routing Engine (completed below)
 
 ## Phase 3 Summary
-Not started
+
+**Status:** Completed
+
+**Objective:** Given a source, destination, topology and routing constraints, find the cheapest feasible path and return it with its cost, ready for Phase 4 resource allocation.
+
+**Routing architecture** (`include/opticalnet/routing/`, `src/routing/`, library target `opticalnet::routing`, depends on `opticalnet::topology`):
+- `IRoutingAlgorithm` — one-method interface: `findPath(topology, source, destination, constraints) -> Result<Path>`.
+- `DijkstraRouter` — the implementation.
+- `RoutingEngine` — thin entry point holding an algorithm (Dijkstra by default). It never owns the topology: the caller passes the `Topology` on every call. It finds paths only and reserves nothing.
+- `Path` and `RoutingConstraints` — the result and request types.
+- Flow: `Topology -> RoutingEngine -> Path -> (Phase 4) ResourceManager`. Routing owns no resource state; there is no second copy of the graph.
+
+**Dijkstra implementation:** binary min-heap (`std::priority_queue`) over `Topology::outgoing()`, O((V + E) log V). No full-network scan per node; labels live in an `unordered_map`, so per-query set-up is proportional to the part of the graph actually explored. Predecessor links are kept per label and the path is rebuilt source-to-destination at the end. All edge costs are positive (guaranteed by `FiberLink` validation).
+
+**Path representation:** immutable `Path` holding the ordered node sequence, the ordered **link** sequence (essential with parallel links), total cost, the `CostMetric` the cost is expressed in, and hop count. Invariant `nodes = links + 1`, enforced by `Path::create` (returns `Result`). Trivial path = one node, no links, cost 0.
+
+**Cost metrics:** `RoutingConstraints::metric` selects `HopCount`, `Distance` or `Administrative` (default) through `linkCost()`. Tests use graphs where each metric picks a different route.
+
+**Constraints** (`RoutingConstraints`; all take part in the search instead of being checked afterwards):
+- `maxCost` — in the units of the chosen metric; partial paths exceeding it are never extended (tested: a 2000-node chain with `maxCost` 5 inspects fewer than 40 edges). Optical reach is expressed as `{Distance, maxCost = transceiver.reachKm()}`.
+- `maxHops` — **exact**. A plain Dijkstra run ignores it; only if its cheapest path has too many hops is the search repeated over (node, hops-used) states, which finds the cheapest path within the limit (a costlier shorter path is found when needed). Worst case O(maxHops·(V+E) log V), paid only when the limit binds.
+- `minLinkCapacityChannels` — links whose configured capacity is below the value are not used. This is *static* capacity only (`FiberLink::capacityChannels`).
+- `blockedNodes`, `blockedLinks` — never used; a blocked source or destination makes the request infeasible (including source == destination).
+- `linkFilter` — optional per-link predicate. This is the **Phase 4 seam**: the resource manager can supply "link has free capacity" without routing owning or copying resource state. Dynamic capacity is not implemented here.
+- Not implemented: allowed-lists (blocked-lists cover the need), and any second additive resource (e.g. a distance limit while minimising another metric), which would make the problem a constrained shortest-path problem (NP-hard in general).
+
+**Directed-link behavior:** only `outgoing()` edges are followed, so a directed link is used source → target only and a bidirectional link both ways. Tested: forward allowed, reverse blocked, reverse via a second link, a directed edge forcing a detour, mixed topologies.
+
+**Parallel-link behavior:** each parallel link is its own edge; the cheapest under the metric is chosen, and the returned `Path` names the exact `LinkId`. Parallel links of different direction are evaluated independently.
+
+**Deterministic tie-breaking:** among routes to the same node: lower cost, then fewer hops, then smaller predecessor `NodeId`, then smaller `LinkId` (the last follows from ascending-`LinkId` adjacency order). Heap pops follow (cost, hops, NodeId). Results are independent of link insertion order (tested with six rotations) and identical across repeated runs. Costs are compared as exact doubles, so equal-cost ties are guaranteed only for costs that sum exactly (e.g. integers).
+
+**Error handling:** all failures are `Result` errors, none throw. `NotFound` (unknown source or destination), `InvalidArgument` (negative, NaN or infinite `maxCost`), `NoRoute` (destination unreachable even without constraints) and `NoFeasibleRoute` (a route exists but none satisfies the constraints; found by one extra unconstrained search, only on failure). `source == destination` returns the trivial path (an unknown node is still `NotFound`). A null algorithm passed to `RoutingEngine` is a programming error and throws `std::invalid_argument`. New `ErrorCode`s: `NoRoute`, `NoFeasibleRoute`.
+
+**Tests (74 new, in `tests/unit/`):** `Path` (5 cases: shape, trivial path, invalid shape/cost, equality incl. parallel links); basic routing (one hop, shortest of two, cheaper-but-longer, reconstruction order, source == destination, unreachable, unknown endpoints, topology untouched); metrics (each metric chooses a different route); directed links; parallel links; determinism (equal-cost branches, fewer hops, insertion-order independence, repeated runs on a grid, plus two cases written specifically so the hop and predecessor tie-break rules decide the outcome); constraints (max cost at/below boundary, max hops at/below boundary, hop limits that bind, combined constraints, static capacity, blocked nodes/links, protection-path use, link filter, error-code distinction); the engine (custom algorithm, null algorithm); a randomized test comparing the router with **exhaustive enumeration of all simple paths** on 5000 random 9-node multigraphs with directed, bidirectional and parallel links under random metrics and constraint combinations (it asserts that every outcome occurred, including >40 cases where the hop limit forced a costlier path); large-graph tests (below).
+
+**Mutation checks performed:** I temporarily broke the code and confirmed the tests fail: disabling the hop-limit re-search (9 failures), removing maxCost pruning (8), dropping the fewer-hops preference (1), dropping the predecessor tie-break (1). The first versions of the two tie-break tests did *not* detect those last two mutations; they were strengthened until they did. A fifth mutation (dropping the link-id tie-break) survived because that comparison is dead code given ascending adjacency order, so it was removed and documented instead.
+
+**Test count and results:** 195 total = 43 Phase 1 + 78 Phase 2 + 74 Phase 3 (all Phase 1 and 2 tests unchanged). Clean rebuild and `ctest`: Debug 195/195 passed (~16 s), Release 195/195 passed (~5 s). Zero warnings under warnings-as-errors. C++20 confirmed in the compile commands. Toolchain unchanged (MSVC 19.44.35229, CMake 3.31.6, Ninja 1.13.0); only MSVC was tested.
+
+**Large-graph tests:** 5000-node linear chain routed in both directions (4999 hops, exact cost, under a 10 s sanity bound); 5000-node ring (shorter side chosen, 999 and 1001 hops; equal-cost opposite node resolved deterministically); 70×70 grid (4900 nodes) shortest path with exact Manhattan cost, plus a binding hop limit that is feasible at the exact minimum and infeasible one below; 400-node chain with an express link under a binding hop limit. These are correctness/sanity tests, not benchmarks (Phase 10).
+
+**Important design decisions:** routing is a pure read of `Topology` and holds no state; constraints prune during the search; exact hop limits via a lazily-run layered search instead of an approximation; reach is a distance limit rather than a second constraint; static capacity only, with a filter hook for Phase 4; a small interface (`IRoutingAlgorithm`) kept because `ARCHITECTURE.md` plans pluggable algorithms, with no deeper hierarchy.
+
+**Known limitations:**
+- Single-path, single-criterion: no k-shortest paths, no disjoint-pair routing (blocked-link sets allow it to be composed by the caller), no multi-constraint additive limits beyond cost and hops.
+- Capacity feasibility uses configured capacity only; free capacity requires Phase 4 and the `linkFilter`.
+- The hop-limited search can be slow for very large graphs with a large binding `maxHops`.
+- Ties between sums that are equal only up to floating-point rounding are not guaranteed to resolve identically.
+- No transceiver or switching-element feasibility beyond the distance limit and port counts from Phase 2.
+- Not tested with GCC/Clang.
+
+**Commit:** `feat: implement OpticalNet phase 3 routing engine` on `main` (the hash is in `git log`; a commit cannot contain its own hash).
+
+**Next phase:** Phase 4 — Resource & Connection Management
 
 ## Phase 4 Summary
 Not started

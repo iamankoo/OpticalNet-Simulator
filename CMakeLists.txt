@@ -54,6 +54,16 @@ target_link_libraries(opticalnet_topology
   PUBLIC opticalnet::core
   PRIVATE opticalnet_warnings nlohmann_json::nlohmann_json)
 
+add_library(opticalnet_routing STATIC
+  src/routing/Path.cpp
+  src/routing/DijkstraRouter.cpp
+  src/routing/RoutingEngine.cpp
+)
+add_library(opticalnet::routing ALIAS opticalnet_routing)
+target_link_libraries(opticalnet_routing
+  PUBLIC opticalnet::topology
+  PRIVATE opticalnet_warnings)
+
 if(OPTICALNET_BUILD_TESTS)
   enable_testing()
   add_subdirectory(tests)
