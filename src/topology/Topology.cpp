@@ -31,9 +31,9 @@ Topology::Topology(Network network) : network_(std::move(network)) {
     for (const auto& entry : network_.links()) indexLink(entry.second);
 }
 
-void Topology::indexLink(const FiberLink& link) {
-    const Adjacency toTarget{link.target(), link.id()};
-    const Adjacency toSource{link.source(), link.id()};
+void Topology::indexLink(const FiberLink& link) {  // `link` must be the object stored in network_
+    const Adjacency toTarget{link.target(), link.id(), &link};
+    const Adjacency toSource{link.source(), link.id(), &link};
     insertSorted(incident_[link.source()], toTarget);
     insertSorted(incident_[link.target()], toSource);
     insertSorted(outgoing_[link.source()], toTarget);
@@ -69,7 +69,7 @@ Result<void> Topology::removeNode(NodeId id) {
 Result<void> Topology::addLink(FiberLink link) {
     auto result = network_.addLink(link);  // validates id uniqueness and endpoints
     if (!result.ok()) return result;
-    indexLink(link);
+    indexLink(*network_.findLink(link.id()));  // index the stored object, not the caller's copy
     return {};
 }
 

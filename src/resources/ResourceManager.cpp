@@ -1,5 +1,6 @@
 #include "opticalnet/resources/ResourceManager.hpp"
 
+#include <algorithm>
 #include <string>
 
 namespace opticalnet {
@@ -30,7 +31,9 @@ std::uint32_t ResourceManager::allocated(LinkId link) const noexcept {
 }
 
 std::vector<std::pair<LinkId, std::uint32_t>> ResourceManager::allocations() const {
-    return {allocated_.begin(), allocated_.end()};
+    std::vector<std::pair<LinkId, std::uint32_t>> result(allocated_.begin(), allocated_.end());
+    std::ranges::sort(result);  // ascending by LinkId
+    return result;
 }
 
 std::vector<std::pair<LinkId, LinkUsage>> ResourceManager::usages() const {
@@ -130,7 +133,7 @@ Result<void> ResourceManager::release(std::span<const LinkId> links, std::uint32
 
 ValidationReport ResourceManager::validate() const {
     ValidationReport report;
-    for (const auto& [link, used] : allocated_) {
+    for (const auto& [link, used] : allocations()) {  // ascending LinkId, so the report order is deterministic
         const FiberLink* fiber = topology_->findLink(link);
         if (fiber == nullptr) {
             report.issues.push_back({Severity::Error, IssueCode::AllocationOnUnknownLink,

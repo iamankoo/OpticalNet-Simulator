@@ -10,15 +10,15 @@ Source-of-truth documents: [Phases.md](Phases.md), [ARCHITECTURE.md](ARCHITECTUR
 
 ## Current status
 
-- **Implementation status:** Phases 1 (core domain model, build/test foundation), 2 (topology & graph engine), 3 (routing engine), 4 (resource & connection management), 5 (simulation engine), 6 (multithreaded simulation), 7 (failure & recovery simulation) 8 (validation & testing framework) and 9 (Python + FastAPI integration) are implemented and tested. Phase 10 is not started.
-- **Current phase:** Phase 9 complete; ready for Phase 10
-- **Completed phases:** 1, 2, 3, 4, 5, 6, 7, 8, 9
+- **Implementation status:** Phases 1 (core domain model, build/test foundation), 2 (topology & graph engine), 3 (routing engine), 4 (resource & connection management), 5 (simulation engine), 6 (multithreaded simulation), 7 (failure & recovery simulation) 8 (validation & testing framework), 9 (Python + FastAPI integration) and 10 (optimization, benchmarking & release) are implemented and tested. **OpticalNet — All 10 Phases COMPLETED.**
+- **Current phase:** None — all phases complete
+- **Completed phases:** 1, 2, 3, 4, 5, 6, 7, 8, 9, 10
 - **In-progress phase:** None
-- **Pending phases:** 10
+- **Remaining phases:** None
 - **Key implemented components:** `Network`, `Node`, `FiberLink`, `Transceiver`, `SwitchingElement`, `INetworkElement`, strong IDs, `Result<T>`/`Error`, `Topology`, `Adjacency`, `ValidationReport`, `CostMetric`/`linkCost`, JSON topology loader/exporter, `Path`, `RoutingConstraints`, `IRoutingAlgorithm`, `DijkstraRouter`, `RoutingEngine`, `ConnectionRequest`, `Connection`, `ConnectionManager`, `ResourceManager`, `LinkUsage`, `SimulationEngine`, `SimulationConfig`, `RequestGenerator`, `EventQueue`, `Rng`, `SimulationResult`/`SimulationMetrics`, `ThreadPool`, `SimulationStudy`/`StudyConfig`/`StudyResult`/`StudyAggregate`, `SampleStatistics`, `FailureState`, `RecoveryPolicy`, `ScriptedFailure`/`RandomFailureConfig`, `generateRandomFailures`, validation layer (`ValidationResult`, invariant checkers, `exhaustiveRoute`, `ShadowLedger`, deterministic generators), pybind11 module `opticalnet._opticalnet`, Python package `opticalnet`, FastAPI app (`api/`)
-- **Current tests/status:** 596 GoogleTest cases (43 Phase 1 + 78 Phase 2 + 74 Phase 3 + 59 Phase 4 + 74 Phase 5 + 62 Phase 6 + 101 Phase 7 + 105 Phase 8), all passing under CTest in Release and Debug (MSVC, warnings-as-errors); plus 102 Python/API pytest cases (binding + HTTP), run by CTest as `python_api_tests` (597 CTest entries when the extension is enabled)
-- **Known limitations:** See the Phase 1–9 summaries.
-- **Next phase:** Phase 10 — Optimization, Benchmarking & Release
+- **Current tests/status:** 606 GoogleTest cases (43 Phase 1 + 78 Phase 2 + 74 Phase 3 + 59 Phase 4 + 74 Phase 5 + 62 Phase 6 + 101 Phase 7 + 105 Phase 8 + 10 Phase 10; 501 unit + 105 validation) plus 102 Python/API pytest cases (binding + HTTP), run by CTest as `python_api_tests` = 607 CTest entries; all passing in Debug and Release (GCC 13.3 on Linux, warnings-as-errors; Phases 1-9 also on MSVC)
+- **Known limitations:** See the Phase 1–10 summaries.
+- **Next phase:** None. The project is complete.
 
 ## Phase 1 Summary
 
@@ -639,13 +639,88 @@ Dependencies: Python ≥ 3.10 (tested 3.10.11), FastAPI (tested 0.115.6), Pydant
 - `include_trace` on large runs produces large responses (the trace is only returned on request, and never for studies).
 - `CONSTRAINT_VIOLATION` and `RESOURCE_UNAVAILABLE` have exception classes and HTTP mappings but are not reachable through the current API surface (they are tested via injected exceptions).
 
-**Commit:** `feat: implement OpticalNet Python and FastAPI integration` on `main` (the hash is in `git log`).
+**Commit:** `44755a77ac020d018bfe3273415c592b03da4d19` — `feat: implement OpticalNet Python and FastAPI integration`.
 
-**Next phase:** Phase 10 — Optimization, Benchmarking & Release (not started)
-
+**Next phase:** Phase 10 — Optimization, Benchmarking & Release (completed below)
 
 ## Phase 10 Summary
-Not started
+
+**Status:** Completed
+
+> Phase 10 measured the engine, optimized only what the measurements pointed at, re-validated everything, and prepared the project for demonstration. No feature was added. Every number below was measured by the benchmark suite in this repository on the environment stated; none is estimated.
+
+**What was implemented**
+- **Benchmark suite** (`benchmarks/`, CMake option `OPTICALNET_BUILD_BENCHMARKS`, default OFF): `Bench.cpp` (C++, executable `opticalnet_bench`), `bench_api.py` (binding vs. in-process FastAPI `TestClient`), `bench_server.py` (a real `uvicorn` server over loopback HTTP, standard-library client), `report.py` (turns the raw JSON of before/after runs into `benchmarks/RESULTS.md`, including a bit-identity check of the computed results).
+- **Three measured optimizations** (below) plus **10 new C++ regression tests** (`tests/unit/OptimizationTests.cpp`).
+- **Demo** (`examples/demo.py`): a narrated end-to-end walkthrough of the HTTP API (topology, routing with metrics/constraints, connection capacity, simulation + determinism, failure/recovery under both policies, study with 1 vs 4 workers, validation), runnable against a server or `--in-process`.
+- **Final documentation** (README rewritten as the project's front page with a recruiter demo, this report, Phases/ARCHITECTURE/TECHSTACK updated).
+- **Linux/GCC portability fixes** found by the first build on GCC (details under *Codespace findings*).
+
+**Benchmark methodology.** Workloads are generated, deterministic grid topologies and fixed seeds (no I/O in the timed regions; request endpoints, blocked nodes and simulation seeds come from seeded generators). Each benchmark runs 3 repetitions and the **median** is recorded; "before" (commit `44755a7`, built in a separate git worktree with the same compiler flags and the same benchmark source) and "after" were run **alternately** (before, after, before, after) on the same machine, and the reported value is the mean of the two per-run medians. Speedup = before / after. Each benchmark also folds its computed results (path nodes/links/costs, all simulation metrics, trace entries, study aggregates) into a checksum, which is compared across all runs. Memory is the process peak resident size, measured in a separate process per workload (`wait4` rusage), because a single process only reports a cumulative peak.
+
+**Environment.** GitHub Codespace, 4 vCPU AMD EPYC 7763, 16 GB RAM, Ubuntu 24.04; GCC 13.3 (`-O3`, LTO, `-std=c++20`, `-Wall -Wextra -Wpedantic -Werror`), CMake 3.28.3, Ninja 1.11.1, Python 3.13.8, FastAPI 0.162.0, Pydantic 2.14.1, Uvicorn 0.54.0, pytest 9.1.1, httpx 0.28.1, pybind11 2.13.6. (The first, abandoned attempt on the Windows development laptop — MSVC 19.44, 12 hardware threads, 7.3 GB RAM — was stopped by the OS under memory pressure; its quick preliminary figures of roughly 2.5x routing and 1.9x simulation were *not* used.)
+
+**Results (C++ engine; complete tables in `benchmarks/RESULTS.md`)**
+
+| Benchmark | Workload | Before | After | Speedup | Results identical |
+|---|---|---:|---:|---:|---|
+| routing.dijkstra.hop_count | 100x100 grid (10,000 nodes, 19,800 links), 1,000 random pairs | 2,523 ms | 942 ms | 2.68x | yes |
+| routing.dijkstra.distance | same | 2,812 ms | 1,152 ms | 2.44x | yes |
+| routing.dijkstra.administrative | same | 2,823 ms | 1,150 ms | 2.46x | yes |
+| routing.constrained.max_hops | maxHops=200 | 2,831 ms | 1,151 ms | 2.46x | yes |
+| routing.constrained.tight_hops | maxHops=150, layered search | 7,927 ms | 3,457 ms | 2.29x | yes |
+| routing.constrained.blocked_nodes | 485 blocked nodes + min capacity 8 | 2,968 ms | 1,361 ms | 2.18x | yes |
+| connections.establish_release | 30x30 grid, 3,000 capacity-aware establishes + releases | 1,196 ms | 466 ms | 2.57x | yes |
+| simulation.single | 20x20 grid (400 nodes, 760 links), 40,195 requests, 80,220 events | 4,536 ms | 2,004 ms | 2.26x | yes |
+| simulation.single_traced | same, trace recorded | 4,558 ms | 1,992 ms | 2.29x | yes |
+| simulation.failures | random failures: 608 failure events, 2,087 connections affected | 4,979 ms | 2,254 ms | 2.21x | yes |
+| study, 1 / 2 / 4 / 8 / auto workers | 32 replications, 764,405 events | 43.89 / 22.12 / 16.17 / 16.47 / 16.25 s | 19.17 / 9.67 / 6.84 / 6.82 / 6.81 s | 2.29 / 2.29 / 2.36 / 2.42 / 2.39x | yes |
+| resources.allocate_release | 30x30 grid, 200 paths x 500 rounds | 446 ms | 458 ms | 0.97x | n/a |
+| topology.construct / export_json / load_json | 100x100 grid / 3.8 MB JSON | 9.5 / 77.6 / 79.8 ms | 10.4 / 76.0 / 81.0 ms | 0.91 / 1.02 / 0.99x | n/a |
+| topology.connectivity / validate / neighbors | 100x100 grid | 7.0 / 1.74 / 0.73 ms | 7.4 / 1.93 / 0.90 ms | 0.95 / 0.90 / 0.81x | n/a |
+| validation.check_topology / check_trace | 10,000 nodes / 25,337-entry trace | 20.6 / 10.2 ms | 20.6 / 10.3 ms | 1.00 / 1.00x | n/a |
+
+After-optimization throughput: 868 routing queries/s on the 10,000-node grid, about 40,000 simulation events/s. **Study scaling (after):** 1 worker 19.17 s, 2 workers 1.98x, 4 workers 2.80x, 8 and "auto" (4 threads on 4 vCPUs) 2.81x/2.82x — flat beyond the 4 available vCPUs, and identical results for every worker count.
+
+**Python / FastAPI (after vs. before, in-process `TestClient`, real compiled extension):** `binding.route` 61.8 → 26.6 ms for 300 routes (2.33x); `binding.simulate` 1,235 → 603 ms (2.05x); `POST /simulate` 1,225 → 561 ms (2.18x); with failures 1,359 → 668 ms (2.04x); `POST /study` 16 replications 1 worker 11.47 → 5.45 s (2.11x), 4 workers 4.19 → 1.92 s (2.18x); `POST /validate` 252 → 121 ms (2.08x); `POST /connections/scenario` (300 establishes) 114 → 63.9 ms (1.78x); `POST /topologies` (900 nodes, 181 KiB) 20.3 → 21.2 ms (0.96x); **`POST /route` 1,214 → 1,213 ms (1.00x)**: the in-process `TestClient` itself costs 3.54 ms for an empty `GET /health`, and a routed request costs 3.99 ms, while the engine needs only 0.087 ms of it — so the routing gain is invisible through HTTP in that harness (an honest finding, not a defect). 16 simulation requests: sent sequentially 7.97 s before / 3.61 s after; sent from 8 client threads 2.92 s before / 1.30 s after (2.25x faster than before; 2.8x faster than sequential after) — the GIL is released while C++ runs.
+
+**Real server (uvicorn on loopback, after):** `GET /health` 0.86 ms; `POST /route` (900 nodes) 1.30 ms; `POST /simulate` (≈20,000 events) 552 ms; `POST /study` (16 replications) 5.31 s with 1 worker and 1.87 s with 4 workers (2.84x); 16 `/simulate` requests: 3.54 s sequentially vs 1.27 s from 8 concurrent clients (2.79x).
+
+**Memory (peak resident, separate process per workload):** setup (100x100 grid) 16.2 MiB before and after; routing and study workloads 16.2 MiB both; simulation 17.8 MiB before, 18.6 MiB after (+0.8 MiB from the cached link pointers).
+
+**Optimizations performed (each found by the measurements: routing is where the time goes — a simulation is mostly one Dijkstra per arrival)**
+1. **Cached link pointer in `Adjacency`** (`include/opticalnet/topology/Topology.hpp`, `src/topology/Topology.cpp`, `src/routing/DijkstraRouter.cpp`). Dijkstra called `Topology::findLink` (a `std::map` lookup, ~log₂ 20,000 cache-missing steps) for every edge examined; each adjacency entry now carries `const FiberLink* fiber` into the owning `Network`'s map (nodes of a `std::map` never move). Safety: `Adjacency::operator==` ignores the pointer (so existing tests and semantics are unchanged); `Topology`'s copy constructor/assignment now **rebuild the index from a copy of the `Network`** so a copy can never point into the original (moves keep the map nodes, so pointers stay valid); `addLink` indexes the *stored* object, not the caller's temporary; the search falls back to `findLink` if a hand-built entry has no pointer. This accounts for the largest part of the routing gain (applied after the label table; on the quick workload it took distance routing from 70 → 32 ms).
+2. **Flat Dijkstra label table** (`src/routing/DijkstraRouter.cpp`): the node-based `std::unordered_map<State, Label>` (one allocation per label, repeated rehash while a search grows to thousands of labels) is replaced by a contiguous `std::vector<Label>` indexed through an open-addressing table (linear probing, power-of-two capacity, load ≤ ½). Tie-breaking logic (`improves`) is untouched. Empty `blockedNodes`/`blockedLinks` sets are no longer hashed per edge. Measured on the quick workload: 78 → 70 ms before optimization 1.
+3. **Hash map for per-link allocation** (`ResourceManager::allocated_`: `std::map` → `std::unordered_map`): `allocated(link)` is called for every edge by the capacity filter inside capacity-aware routing. Everything that exposes an order sorts by `LinkId` explicitly (`allocations()`, `validate()`), so output order is unchanged. Together with (1) this is what takes `connections.establish_release` to 2.57x and the simulation to 2.26x (simulation measured 376 → 270 → 192 ms on the quick workload after optimizations 1 and 3).
+
+What was **not** optimized: topology operations, JSON parsing, validation, the event queue and the study scheduler showed no bottleneck worth the risk. Topology construction and neighbour queries are slightly slower (up to ~10% and ~19%, at 0.7-10 ms) as the cost of (1).
+
+**Proof that behaviour did not change**
+- The benchmark checksums over every path, metric, trace entry and study aggregate are **identical before and after in all runs** (C++: 15 benchmarks that compute results; the study checksum is also identical for 1, 2, 4, 8 and automatic workers). Re-verified in the Codespace; earlier on Windows (MSVC) with the quick workload (24 comparisons).
+- The full pre-existing suite passes unchanged: 596 C++ tests (including the Phase 8 validation suite: exhaustive-enumeration and Bellman-Ford comparisons, shadow ledger, trace replay, determinism across worker counts, golden fixtures) and 102 Python tests.
+- 10 new tests (`Optimization.*`): adjacency pointers belong to their own topology, equality ignores the pointer, copies survive destruction of the original, mutating a copy does not touch the original, copy assignment (incl. self-assignment), moves, `Network`-constructed topologies, 6,400-node and hop-limited searches that force the label table to grow, routing equality on a copy, and ascending `LinkId` order of allocations.
+
+**Mutation testing of the optimizations** (production code deliberately broken, suite must fail, then restored byte-identical): 6 attempted, **4 detected, 2 equivalent mutants**.
+- *Detected:* (a) `Topology` copy constructor copies the adjacency pointers (3 `Optimization` tests fail); (b) `Adjacency::operator==` also compares the pointer (`TopologyGraph.OutgoingExposesNeighborAndLinkSortedByLinkId` and an `Optimization` test fail); (c) `allocations()` without the sort (`Optimization.AllocationsAreReportedInAscendingLinkOrder` fails); (d) `addLink` indexes the caller's temporary copy (routing tests fail, e.g. `Routing.OneHopRoute`).
+- *Equivalent (not caught, and cannot be):* (e) growing the label table at load factor 7/8 instead of 1/2: the table still always keeps at least one empty slot (it grows before the last slot fills), so every probe terminates and every lookup returns the same label; only probe length differs, which no functional test can observe. (f) Removing the `findLink` fallback for an adjacency entry with a null pointer: `Topology` is the only producer of `Adjacency` entries and always sets the pointer, so the fallback is unreachable through the public API (defensive code). No test was weakened to claim 6/6.
+
+**Codespace findings (the first GCC build)** — the project had only been compiled with MSVC before, and `-Werror` on GCC 13 exposed: (1) ~35 `-Wdangling-else` errors in test code (`if (x) ASSERT_OK(...)`, because GoogleTest macros expand to `if/else`): fixed with braces; (2) a **latent test bug** found by `-Wdangling-reference`: `std::minmax(a.value(), b.value())` in `GeneratorTests.cpp` kept references to destroyed temporaries; fixed; (3) the static libraries were not position-independent, so linking them into the Python shared module failed on Linux: `CMAKE_POSITION_INDEPENDENT_CODE` is now set when `OPTICALNET_BUILD_PYTHON=ON`; (4) the Codespace's default git identity was not the project's, so the repository-local identity was set to `iamankoo` / `aniketraj00384@gmail.com`; (5) `ninja` had to be installed and Python 3.14 (default there) is newer than pybind11 2.13.6 supports, so Python 3.13.8 was used. No production-logic change was needed for GCC.
+
+**Tests and builds (Codespace, GCC 13.3, clean build directories, warnings-as-errors, C++20)**
+- Phase test counts: Phase 1 43, Phase 2 78, Phase 3 74, Phase 4 59, Phase 5 74, Phase 6 62, Phase 7 101, Phase 8 105, Phase 10 10 → **606 C++ tests** (501 unit + 105 validation). **102 Python tests**. **607 CTest entries**.
+- **Debug 607/607 passed** (CTest wall time ≈ 44 s with `-j4` on this machine), **Release 607/607 passed** (≈ 5.5 s), re-run after the documentation changes on the final tree.
+- On Windows/MSVC after the optimizations: the pre-existing suite passed on Release (597/597 CTest entries) and the 10 new tests passed; the full matrix was not repeated there.
+
+**Final API validation.** The FastAPI integration tests (102) run against the real compiled extension under CTest on both Debug and Release; `examples/demo.py` was run end-to-end both in-process and against a real `uvicorn` server; `/health`, `/docs`, `/openapi.json` return 200; `bench_server.py` exercises the real server for `/route`, `/simulate`, `/study` and concurrent clients.
+
+**Release / readiness work.** README rewritten with architecture, features, the 10 phases, measured benchmarks, test numbers, examples, exact Windows/VS Code and Codespaces commands and a 5-minute recruiter demo; `requirements.txt`, the CMake options, `examples/demo.py` and `benchmarks/` make a fresh clone reproducible. A release *tag* was not created (not requested); the final commit is the release candidate.
+
+**Known limitations:** only one cloud VM (4 vCPU) was used, so absolute numbers vary by machine and thread scaling stops at 4 workers; the largest graph is 10,000 nodes (routing) and 400 nodes (simulation); topology construction/neighbour queries became slightly slower; no profiler/sanitizer/coverage run; memory is peak RSS only; the final matrix ran on Linux/GCC (Windows/MSVC and the PowerShell demo commands were not re-run in full after Phase 10; Clang untested); the Python extension is not packaged as a wheel; no authentication on the API.
+
+**Commit:** `feat: complete OpticalNet optimization benchmarking and release` on `main` (the hash is in `git log`; a commit cannot contain its own hash).
+
+**Final project status: OpticalNet — All 10 Phases COMPLETED.**
+
 
 ---
 

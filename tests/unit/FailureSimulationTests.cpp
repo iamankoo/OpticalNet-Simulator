@@ -50,12 +50,13 @@ TraceSummary summarize(const SimulationResult& r) {
     for (const auto& e : r.trace) {
         if (e.kind == TraceKind::Event && e.type == EventType::ConnectionArrival && e.success)
             held[e.connection] = static_cast<std::uint64_t>(e.capacityChannels) * e.hops;
-        else if (e.kind == TraceKind::Event && e.type == EventType::ConnectionRelease)
+        else if (e.kind == TraceKind::Event && e.type == EventType::ConnectionRelease) {
             EXPECT_EQ(held.erase(e.connection), 1u);
-        else if (e.kind == TraceKind::Rerouted)
+        } else if (e.kind == TraceKind::Rerouted) {
             held[e.connection] = static_cast<std::uint64_t>(e.capacityChannels) * e.hops;
-        else if (e.kind == TraceKind::Lost)
+        } else if (e.kind == TraceKind::Lost) {
             EXPECT_EQ(held.erase(e.connection), 1u);
+        }
     }
     TraceSummary s;
     for (const auto& [id, channels] : held) s.channelLinks += channels;
@@ -529,8 +530,12 @@ Topology grid(std::uint32_t side, std::uint32_t channels) {
     std::uint32_t link = 1;
     for (std::uint32_t r = 0; r < side; ++r)
         for (std::uint32_t c = 0; c < side; ++c) {
-            if (c + 1 < side) EXPECT_TRUE(t.addLink(routedLink(link++, node(r, c), node(r, c + 1), 10, 1, LinkDirection::Bidirectional, channels)).ok());
-            if (r + 1 < side) EXPECT_TRUE(t.addLink(routedLink(link++, node(r, c), node(r + 1, c), 10, 1, LinkDirection::Bidirectional, channels)).ok());
+            if (c + 1 < side) {
+                EXPECT_TRUE(t.addLink(routedLink(link++, node(r, c), node(r, c + 1), 10, 1, LinkDirection::Bidirectional, channels)).ok());
+            }
+            if (r + 1 < side) {
+                EXPECT_TRUE(t.addLink(routedLink(link++, node(r, c), node(r + 1, c), 10, 1, LinkDirection::Bidirectional, channels)).ok());
+            }
         }
     return t;
 }

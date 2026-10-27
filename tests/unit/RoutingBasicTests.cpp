@@ -315,8 +315,12 @@ TEST(RoutingDeterminism, RepeatedRunsGiveIdenticalResults) {
     for (std::uint32_t r = 0; r < 4; ++r) {
         for (std::uint32_t c = 0; c < 4; ++c) {
             const std::uint32_t n = r * 4 + c + 1;
-            if (c < 3) ASSERT_OK(t.addLink(routedLink(id++, n, n + 1, 1, 1)));
-            if (r < 3) ASSERT_OK(t.addLink(routedLink(id++, n, n + 4, 1, 1)));
+            if (c < 3) {
+                ASSERT_OK(t.addLink(routedLink(id++, n, n + 1, 1, 1)));
+            }
+            if (r < 3) {
+                ASSERT_OK(t.addLink(routedLink(id++, n, n + 4, 1, 1)));
+            }
         }
     }
     const Path first = must(RoutingEngine{}.findPath(t, NodeId{1}, NodeId{16}));

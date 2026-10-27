@@ -13,7 +13,7 @@ OpticalNet is built in exactly **10 phases**, one at a time. A phase starts only
 | 7 | Failure & Recovery Simulation | Completed |
 | 8 | Validation & Testing Framework | Completed |
 | 9 | Python + FastAPI Integration | Completed |
-| 10 | Optimization, Benchmarking & Release | Not started |
+| 10 | Optimization, Benchmarking & Release | Completed |
 
 Testing is not deferred to Phase 8: every phase ships its own unit tests. Phase 8 consolidates, extends and automates validation across the whole system.
 
@@ -261,3 +261,12 @@ Testing is not deferred to Phase 8: every phase ships its own unit tests. Phase 
 **Definition of Done:** Benchmarks reproducible with recorded results; optimizations verified to not break the test suite; docs complete; a clean clone builds and passes.
 
 **Deliverables:** Benchmark suite and results, examples, final docs, release tag.
+
+**Definition of Done — result (Completed):**
+- *Benchmarks reproducible with recorded results:* met. `benchmarks/Bench.cpp`, `bench_api.py`, `bench_server.py` and `report.py` use fixed seeds and generated topologies; before/after results (commit `44755a7` vs. Phase 10) are recorded in `benchmarks/RESULTS.md` and `summary.md` (e.g. Dijkstra on 10,000 nodes 2,812 → 1,152 ms; single simulation 4,536 → 2,004 ms; 32-replication study 43.9 → 19.2 s on one worker).
+- *Optimizations verified not to break the suite:* met. Three optimizations (cached link pointers in adjacency entries, flat Dijkstra label table, hash-map allocation) with bit-identical benchmark checksums, the unchanged 596 earlier C++ tests and 102 Python tests, 10 new regression tests, and mutation testing (4 detected, 2 proven equivalent).
+- *Docs complete:* met (README, summary, Phases, ARCHITECTURE, TECHSTACK, RESULTS).
+- *A clean clone builds and passes:* met on Linux/GCC 13 (Codespace): clean Debug and Release builds with warnings-as-errors, 607/607 CTest entries each. Windows/MSVC was verified for earlier phases and spot-checked after Phase 10.
+- *Tagged release:* not created (not requested); the final commit on `main` is the release candidate.
+
+**Final project status:** all ten phases are COMPLETED.

@@ -37,8 +37,8 @@ TEST(ValGenerators, TopologiesRespectTheirConfiguration) {
             EXPECT_EQ(link.lengthKm(), std::floor(link.lengthKm())) << "integer lengths keep sums exact";
             directed += link.direction() == LinkDirection::Directed;
             ++total;
-            const auto key = std::minmax(link.source().value(), link.target().value());
-            if (!pairs.insert({key.first, key.second}).second) ++parallel;
+            const std::uint32_t a = link.source().value(), b = link.target().value();
+            if (!pairs.insert({std::min(a, b), std::max(a, b)}).second) ++parallel;
         }
         ASSERT_VALID(checkTopology(t));
     }

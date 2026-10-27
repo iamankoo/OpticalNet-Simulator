@@ -53,7 +53,9 @@ void drive(std::uint64_t seed, Counts& counts) {
             // Routing -> ConnectionManager: the exact path that was returned is the one registered and allocated.
             const Connection* registered = manager.find(request.id);
             EXPECT_NE(registered, nullptr) << context;
-            if (registered) EXPECT_EQ(registered->path(), c.path()) << context;
+            if (registered) {
+                EXPECT_EQ(registered->path(), c.path()) << context;
+            }
             EXPECT_TRUE(ledger.allocate(c.allocatedLinks(), request.capacityChannels)) << context;
             return true;
         }

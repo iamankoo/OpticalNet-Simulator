@@ -11,7 +11,12 @@ endif()
 
 option(OPTICALNET_BUILD_TESTS "Build the OpticalNet test suite" ON)
 option(OPTICALNET_BUILD_PYTHON "Build the pybind11 Python extension (needs Python >= 3.10 with development files)" OFF)
+option(OPTICALNET_BUILD_BENCHMARKS "Build the opticalnet_bench benchmark executable" OFF)
 option(OPTICALNET_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" ON)
+
+if(OPTICALNET_BUILD_PYTHON)
+  set(CMAKE_POSITION_INDEPENDENT_CODE ON)  # static libraries are linked into the shared Python extension
+endif()
 
 add_library(opticalnet_warnings INTERFACE)
 if(MSVC)
@@ -129,4 +134,9 @@ endif()
 # (Added after enable_testing() so that its python_api_tests CTest entry is registered.)
 if(OPTICALNET_BUILD_PYTHON)
   add_subdirectory(src/python)
+endif()
+
+# Phase 10: reproducible benchmarks (not part of the test suite). Run a Release build.
+if(OPTICALNET_BUILD_BENCHMARKS)
+  add_subdirectory(benchmarks)
 endif()

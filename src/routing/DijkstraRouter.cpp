@@ -6,7 +6,6 @@
 #include <optional>
 #include <queue>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 namespace opticalnet {
@@ -23,12 +22,6 @@ struct State {
     friend bool operator==(const State&, const State&) = default;
 };
 
-struct StateHash {
-    std::size_t operator()(const State& s) const noexcept {
-        return std::hash<std::uint64_t>{}((static_cast<std::uint64_t>(s.node.value()) << 32) | s.layer);
-    }
-};
-
 struct Step {  // how a label was reached
     State from;
     LinkId link;
@@ -39,6 +32,59 @@ struct Label {
     std::uint32_t hops;
     std::optional<Step> via;  // empty for the source
     bool settled = false;
+    State state{NodeId(0), 0};  // the key, kept so the table can be rebuilt when it grows
+};
+
+// Labels of one search, stored contiguously and found through an open-addressing index (linear probing,
+// power-of-two capacity, load factor <= 1/2). This replaces a node-based std::unordered_map, which allocated once
+// per label and rehashed repeatedly while a search grew to thousands of states. Semantics are identical: one
+// label per State, found by key. References returned by find()/emplace() are invalidated by the next emplace().
+class LabelTable {
+public:
+    LabelTable() : slots_(64, kEmpty) {}
+
+    Label* find(const State& key) {
+        for (std::size_t i = hash(key) & mask();; i = (i + 1) & mask()) {
+            const std::uint32_t slot = slots_[i];
+            if (slot == kEmpty) return nullptr;
+            if (labels_[slot].state == key) return &labels_[slot];
+        }
+    }
+
+    Label& at(const State& key) { return *find(key); }
+
+    Label& emplace(const State& key, Label label) {
+        if ((labels_.size() + 1) * 2 > slots_.size()) grow();
+        label.state = key;
+        labels_.push_back(std::move(label));
+        insertSlot(static_cast<std::uint32_t>(labels_.size() - 1));
+        return labels_.back();
+    }
+
+private:
+    static constexpr std::uint32_t kEmpty = 0xFFFFFFFFu;
+
+    static std::size_t hash(const State& s) noexcept {
+        std::uint64_t x = (static_cast<std::uint64_t>(s.node.value()) << 32) | s.layer;
+        x ^= x >> 33;
+        x *= 0xff51afd7ed558ccdULL;
+        x ^= x >> 33;
+        return static_cast<std::size_t>(x);
+    }
+    [[nodiscard]] std::size_t mask() const noexcept { return slots_.size() - 1; }
+
+    void insertSlot(std::uint32_t index) {
+        std::size_t i = hash(labels_[index].state) & mask();
+        while (slots_[i] != kEmpty) i = (i + 1) & mask();
+        slots_[i] = index;
+    }
+    void grow() {
+        slots_.assign(slots_.size() * 2, kEmpty);
+        for (std::uint32_t i = 0; i < labels_.size(); ++i) insertSlot(i);
+    }
+
+    std::vector<Label> labels_;
+    std::vector<std::uint32_t> slots_;
 };
 
 // Strict total preference between two ways of reaching the same state (see DijkstraRouter.hpp).
@@ -69,7 +115,8 @@ struct HeapGreater {
 };
 
 bool edgeAllowed(const RoutingConstraints& c, const Adjacency& edge, const FiberLink& link) {
-    if (c.blockedLinks.contains(edge.link) || c.blockedNodes.contains(edge.neighbor)) return false;
+    if (!c.blockedLinks.empty() && c.blockedLinks.contains(edge.link)) return false;
+    if (!c.blockedNodes.empty() && c.blockedNodes.contains(edge.neighbor)) return false;
     if (link.capacityChannels() < c.minLinkCapacityChannels) return false;
     return !c.linkFilter || c.linkFilter(link);
 }
@@ -78,7 +125,7 @@ bool edgeAllowed(const RoutingConstraints& c, const Adjacency& edge, const Fiber
 // and the caller checks the result. Returns nullopt if no path satisfies the constraints.
 std::optional<Path> search(const Topology& topology, NodeId source, NodeId destination,
                            const RoutingConstraints& c, bool layered) {
-    std::unordered_map<State, Label, StateHash> labels;
+    LabelTable labels;
     std::priority_queue<HeapEntry, std::vector<HeapEntry>, HeapGreater> heap;
 
     const State start{source, 0};
@@ -93,6 +140,7 @@ std::optional<Path> search(const Topology& topology, NodeId source, NodeId desti
         label.settled = true;
         const double cost = label.cost;
         const std::uint32_t hops = label.hops;
+        // (`label` is not used after this point: the loop below may add labels, which invalidates references.)
 
         if (top.state.node == destination) {
             std::vector<NodeId> nodes;
@@ -112,7 +160,7 @@ std::optional<Path> search(const Topology& topology, NodeId source, NodeId desti
         if (layered && c.maxHops && hops >= *c.maxHops) continue;  // cannot extend further
 
         for (const Adjacency& edge : topology.outgoing(top.state.node)) {
-            const FiberLink& link = *topology.findLink(edge.link);
+            const FiberLink& link = edge.fiber != nullptr ? *edge.fiber : *topology.findLink(edge.link);
             if (!edgeAllowed(c, edge, link)) continue;
 
             const double newCost = cost + linkCost(link, c.metric);
@@ -121,13 +169,13 @@ std::optional<Path> search(const Topology& topology, NodeId source, NodeId desti
             const State next{edge.neighbor, layered ? newHops : 0};
             const Step step{top.state, edge.link};
 
-            const auto it = labels.find(next);
-            if (it == labels.end()) {
+            Label* existing = labels.find(next);
+            if (existing == nullptr) {
                 labels.emplace(next, Label{newCost, newHops, step});
-            } else if (!it->second.settled && improves(newCost, newHops, step, it->second)) {
-                it->second.cost = newCost;
-                it->second.hops = newHops;
-                it->second.via = step;
+            } else if (!existing->settled && improves(newCost, newHops, step, *existing)) {
+                existing->cost = newCost;
+                existing->hops = newHops;
+                existing->via = step;
             } else {
                 continue;
             }

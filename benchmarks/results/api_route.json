@@ -1,0 +1,32 @@
+{
+  "python": "3.13.8",
+  "platform": "Linux-6.8.0-1064-azure-x86_64-with-glibc2.39",
+  "repeats": 5,
+  "quick": false,
+  "results": [
+    {
+      "name": "binding.route",
+      "workload": "30x30 grid, 900 nodes, 1740 links, 181 KiB JSON; 300 random pairs, distance",
+      "median_ms": 26.241,
+      "min_ms": 26.218,
+      "max_ms": 29.943,
+      "operations": 300,
+      "unit": "routes",
+      "peak_working_set_mib": 0.0,
+      "throughput_per_s": 11432.6,
+      "ms_per_op": 0.0875
+    },
+    {
+      "name": "http.POST /route",
+      "workload": "30x30 grid, 900 nodes, 1740 links, 181 KiB JSON; 300 random pairs, distance",
+      "median_ms": 1195.37,
+      "min_ms": 1169.214,
+      "max_ms": 1227.963,
+      "operations": 300,
+      "unit": "routes",
+      "peak_working_set_mib": 0.0,
+      "throughput_per_s": 251.0,
+      "ms_per_op": 3.9846
+    }
+  ]
+}

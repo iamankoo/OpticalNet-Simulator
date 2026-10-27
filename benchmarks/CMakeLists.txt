@@ -1,0 +1,5 @@
+add_executable(opticalnet_bench Bench.cpp)
+target_link_libraries(opticalnet_bench PRIVATE opticalnet::validation opticalnet::simulation opticalnet_warnings)
+if(WIN32)
+  target_link_libraries(opticalnet_bench PRIVATE psapi)
+endif()

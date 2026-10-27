@@ -29,8 +29,12 @@ Topology grid4() {
     for (std::uint32_t r = 0; r < 4; ++r)
         for (std::uint32_t c = 0; c < 4; ++c) {
             const std::uint32_t n = r * 4 + c + 1;
-            if (c < 3) EXPECT_TRUE(t.addLink(routedLink(link++, n, n + 1, 1, 1)).ok());
-            if (r < 3) EXPECT_TRUE(t.addLink(routedLink(link++, n, n + 4, 1, 1)).ok());
+            if (c < 3) {
+                EXPECT_TRUE(t.addLink(routedLink(link++, n, n + 1, 1, 1)).ok());
+            }
+            if (r < 3) {
+                EXPECT_TRUE(t.addLink(routedLink(link++, n, n + 4, 1, 1)).ok());
+            }
         }
     return t;
 }

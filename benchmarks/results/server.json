@@ -1,0 +1,61 @@
+{
+  "python": "3.13.8",
+  "results": [
+    {
+      "name": "server.GET /health",
+      "workload": "300 sequential requests",
+      "median_ms": 257.191,
+      "operations": 300,
+      "ms_per_request": 0.8573,
+      "requests_per_s": 1166.4
+    },
+    {
+      "name": "server.POST /route",
+      "workload": "30x30 grid (900 nodes, 1740 links), 300 random pairs, distance",
+      "median_ms": 391.203,
+      "operations": 300,
+      "ms_per_request": 1.304,
+      "requests_per_s": 766.9
+    },
+    {
+      "name": "server.POST /simulate",
+      "workload": "20x20 grid (400 nodes, 760 links), end_time 500, rate 20 (~20k events)",
+      "median_ms": 551.715,
+      "operations": 1,
+      "ms_per_request": 551.7151,
+      "requests_per_s": 1.8
+    },
+    {
+      "name": "server.POST /study workers=1",
+      "workload": "20x20 grid, 16 replications of end_time 300",
+      "median_ms": 5307.959,
+      "operations": 1,
+      "ms_per_request": 5307.959,
+      "requests_per_s": 0.2
+    },
+    {
+      "name": "server.POST /study workers=4",
+      "workload": "20x20 grid, 16 replications of end_time 300",
+      "median_ms": 1868.668,
+      "operations": 1,
+      "ms_per_request": 1868.6676,
+      "requests_per_s": 0.5
+    },
+    {
+      "name": "server.simulate x16 sequential",
+      "workload": "20x20 grid, end_time 200",
+      "median_ms": 3543.983,
+      "operations": 16,
+      "ms_per_request": 221.499,
+      "requests_per_s": 4.5
+    },
+    {
+      "name": "server.simulate x16 8 clients",
+      "workload": "same requests from 8 concurrent clients",
+      "median_ms": 1271.854,
+      "operations": 16,
+      "ms_per_request": 79.4909,
+      "requests_per_s": 12.6
+    }
+  ]
+}

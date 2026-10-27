@@ -35,6 +35,7 @@ add_executable(opticalnet_unit_tests
   unit/FailureRoutingTests.cpp
   unit/FailureSimulationTests.cpp
   unit/FailureStudyTests.cpp
+  unit/OptimizationTests.cpp
 )
 target_compile_definitions(opticalnet_unit_tests PRIVATE
   OPTICALNET_CONFIG_DIR="${PROJECT_SOURCE_DIR}/configs")

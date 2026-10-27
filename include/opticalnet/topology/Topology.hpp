@@ -12,11 +12,18 @@
 namespace opticalnet {
 
 // One entry of the adjacency list: "from this node, `link` leads to `neighbor`".
+//
+// `fiber` is a cached pointer to the link's FiberLink inside the owning Topology's Network (std::map nodes never
+// move), so routing can read a link's properties without a lookup per edge. It is an optimisation only: it is
+// ignored by operator==, may be null for hand-built entries, and is valid exactly as long as the span it came from.
 struct Adjacency {
     NodeId neighbor;
     LinkId link;
+    const FiberLink* fiber = nullptr;
 
-    friend constexpr bool operator==(const Adjacency&, const Adjacency&) = default;
+    friend constexpr bool operator==(const Adjacency& a, const Adjacency& b) noexcept {
+        return a.neighbor == b.neighbor && a.link == b.link;
+    }
 };
 
 // Graph view of a Network.
@@ -38,6 +45,17 @@ class Topology {
 public:
     Topology() = default;
     explicit Topology(Network network);  // builds the adjacency index; a Network is always consistent
+
+    // Adjacency entries point into this topology's own Network, so a copy must rebuild its index instead of copying
+    // the pointers. Moves keep the std::map nodes (and therefore the pointers) intact.
+    Topology(const Topology& other) : Topology(Network(other.network_)) {}
+    Topology& operator=(const Topology& other) {
+        if (this != &other) *this = Topology(other);
+        return *this;
+    }
+    Topology(Topology&&) noexcept = default;
+    Topology& operator=(Topology&&) noexcept = default;
+    ~Topology() = default;
 
     // --- mutation (same rules as Network) ---
     Result<void> addNode(Node node);

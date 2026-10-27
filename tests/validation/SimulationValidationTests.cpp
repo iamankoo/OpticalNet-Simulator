@@ -139,7 +139,9 @@ TEST(ValSimulation, EveryAcceptedArrivalCorrespondsToARealConnection) {
             if (e.type == EventType::ConnectionArrival && e.kind == TraceKind::Event) {
                 const auto outcome = replay.establish(ConnectionRequest{e.connection, e.source, e.destination, e.capacityChannels, c.routing});
                 ASSERT_EQ(outcome.ok(), e.success) << "arrival of connection " << e.connection.value() << " at t=" << e.time;
-                if (outcome.ok()) EXPECT_EQ(outcome.value().path().hopCount(), e.hops);
+                if (outcome.ok()) {
+                    EXPECT_EQ(outcome.value().path().hopCount(), e.hops);
+                }
                 ++checked;
             } else if (e.type == EventType::ConnectionRelease && e.kind == TraceKind::Event) {
                 ASSERT_OK(replay.release(e.connection));

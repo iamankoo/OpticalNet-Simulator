@@ -1,0 +1,20 @@
+{
+  "python": "3.13.8",
+  "platform": "Linux-6.8.0-1064-azure-x86_64-with-glibc2.39",
+  "repeats": 5,
+  "quick": false,
+  "results": [
+    {
+      "name": "http.GET /health (request floor)",
+      "workload": "300 trivial requests, no engine call",
+      "median_ms": 1061.279,
+      "min_ms": 1034.386,
+      "max_ms": 1194.115,
+      "operations": 300,
+      "unit": "requests",
+      "peak_working_set_mib": 0.0,
+      "throughput_per_s": 282.7,
+      "ms_per_op": 3.5376
+    }
+  ]
+}

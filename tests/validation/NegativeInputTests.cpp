@@ -170,7 +170,9 @@ TEST(ValNegativeSimulation, InvalidSimulationInputsAreErrors) {
         Result<SimulationResult> r = Error{ErrorCode::InternalError, "unset"};
         EXPECT_NO_THROW(r = SimulationEngine{}.run(t, c));
         EXPECT_FALSE(r.ok());
-        if (!r.ok()) EXPECT_EQ(r.error().code, code) << r.error().describe();
+        if (!r.ok()) {
+            EXPECT_EQ(r.error().code, code) << r.error().describe();
+        }
     };
     bad([](SimulationConfig& c) { c.endTime = -1; }, ErrorCode::InvalidArgument);
     bad([](SimulationConfig& c) { c.endTime = kNaN; }, ErrorCode::InvalidArgument);

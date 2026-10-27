@@ -1,6 +1,6 @@
 # OpticalNet — Architecture
 
-OpticalNet is a software simulation platform for modeling and validating optical communication networks. It is a **C++20 simulation engine** with a thin Python/FastAPI layer on top. Everything below is the **target design**; nothing here is implemented until `summary.md` says so. Phase numbers refer to [`Phases.md`](Phases.md). Technologies are defined in [`TECHSTACK.md`](TECHSTACK.md).
+OpticalNet is a software simulation platform for modeling and validating optical communication networks. It is a **C++20 simulation engine** with a thin Python/FastAPI layer on top. All components described below are implemented (Phases 1-10); `summary.md` records how each was verified. Phase numbers refer to [`Phases.md`](Phases.md). Technologies are defined in [`TECHSTACK.md`](TECHSTACK.md).
 
 ## High-level architecture
 
@@ -41,7 +41,7 @@ OpticalNet is a software simulation platform for modeling and validating optical
               Validation Framework                (Phase 8)
 ```
 
-The diagram is a dependency/layering view: each layer uses those above it in the C++ core. Validation is cross-cutting — it inspects every layer. Phase 10 (benchmarking/release) adds no component.
+The diagram is a dependency/layering view: each layer uses those above it in the C++ core. Validation is cross-cutting — it inspects every layer. Phase 10 added no component: it added benchmarks and three measured internal optimizations (see *Performance notes*).
 
 ## Key relationships
 
@@ -262,7 +262,14 @@ A small `Logger` interface with levels (error/warn/info/debug), thread-safe sink
 - Sanitizer builds (ASan/UBSan, TSan where supported) remain a possible later addition
 - pytest + FastAPI `TestClient` for the Python binding and HTTP API (`tests/api`, also run by CTest as `python_api_tests` when the extension is enabled)
 
-## Planned source layout
+### Performance notes (Phase 10)
+Measurements showed routing dominates simulation cost (one Dijkstra per request), so only the routing path was changed, without altering any observable behaviour:
+- `Adjacency` carries a cached `const FiberLink*` into the owning `Network`'s `std::map` (map nodes never move), so Dijkstra reads a link without a lookup per edge. The pointer is ignored by `operator==`; `Topology` copies **rebuild** the index (a copy never points into the original), moves keep it valid, and `addLink` indexes the stored object. A null pointer (hand-built entry) falls back to `findLink`.
+- Dijkstra keeps its labels in a contiguous vector found through an open-addressing table instead of a node-based `unordered_map`; the tie-break rules are unchanged.
+- `ResourceManager` stores per-link allocations in a hash map (it is consulted for every edge by the capacity filter); every ordered output (`allocations()`, `validate()`) sorts by `LinkId`.
+Determinism, thread isolation, atomic allocation and validation independence are unaffected: benchmark checksums over all computed results are identical before and after.
+
+## Source layout
 
 ```text
 include/opticalnet/   public headers (core, topology, routing, resources, sim, concurrency, failure, validation)
@@ -271,7 +278,9 @@ tests/                GoogleTest suites
 src/python/           pybind11 bindings (Phase 9)
 python/opticalnet/    Python package re-exporting the extension (Phase 9)
 api/                  FastAPI app: main, models, errors, routes (Phase 9)
-examples/  benchmarks/  docs/
+benchmarks/           C++ and Python benchmarks, report generator, RESULTS.md (Phase 10)
+examples/             demo.py end-to-end walkthrough (Phase 10)
+tests/api/            pytest suite for the binding and HTTP API (Phase 9)
 ```
 
 ## Non-goals

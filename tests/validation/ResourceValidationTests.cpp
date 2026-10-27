@@ -89,7 +89,9 @@ TEST(ValResources, RandomAllocateReleaseSequencesAgreeWithAnIndependentLedger) {
             }
             for (const LinkId id : all) ASSERT_EQ(rm.allocated(id), ledger.allocated(id)) << "link " << id.value();
             ASSERT_EQ(rm.totalAllocated(), ledger.totalAllocated());
-            if (op % 20 == 0) ASSERT_VALID(checkResources(rm, t));
+            if (op % 20 == 0) {
+                ASSERT_VALID(checkResources(rm, t));
+            }
         }
         ASSERT_VALID(checkResources(rm, t));
         for (const Held& h : held) {

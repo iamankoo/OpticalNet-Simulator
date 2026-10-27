@@ -28,7 +28,9 @@ TEST(ValFailures, RandomWalkOfFailuresAgreesWithAnIndependentModel) {
             else if (fail) { ok = model.insert(id).second; }
             else { ok = model.erase(id) == 1; }
             ASSERT_EQ(actual.ok(), ok) << "step " << step;
-            if (!ok) EXPECT_EQ(actual.error().code, want);
+            if (!ok) {
+                EXPECT_EQ(actual.error().code, want);
+            }
             ASSERT_EQ(failures.failedLinks().size(), modelLinks.size());
             ASSERT_EQ(failures.failedNodes().size(), modelNodes.size());
             ASSERT_VALID(checkFailureState(failures, t));

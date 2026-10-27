@@ -21,6 +21,16 @@ The stack is locked. OpticalNet is primarily a **C++ simulation engine**; the co
 
 pybind11 and nlohmann/json are the only non-spec additions, each justified by a concrete requirement. Both are fetched via CMake `FetchContent`, as is GoogleTest.
 
+## Release tooling (Phase 10)
+
+| Area | Technology | Notes |
+|------|-----------|-------|
+| Benchmarking | Own suite: `std::chrono` (C++), `time.perf_counter`/`http.client` (Python), `benchmarks/report.py` | No benchmarking library; fixed seeds, median of repetitions, result checksums |
+| Platforms verified | MSVC 19.44 / Windows 11 (Phases 1-9, spot-check in 10); GCC 13.3 / Ubuntu 24.04 in a GitHub Codespace (final Debug + Release runs, benchmarks) | Clang not tested |
+| CMake options | `OPTICALNET_BUILD_PYTHON`, `OPTICALNET_BUILD_BENCHMARKS`, `OPTICALNET_BUILD_TESTS`, `OPTICALNET_WARNINGS_AS_ERRORS` | Python and benchmarks are opt-in |
+
+No new third-party dependency was added in Phase 10.
+
 ## Build requirements
 
 - C++20 compiler: GCC ≥ 11, Clang ≥ 14, or MSVC 2022

@@ -419,8 +419,12 @@ TEST(ConnectionManagerStress, GridWithManyConnectionsStaysConsistent) {
     std::uint32_t link = 1;
     for (std::uint32_t r = 0; r < kSide; ++r) {
         for (std::uint32_t c = 0; c < kSide; ++c) {
-            if (c + 1 < kSide) ASSERT_OK(t.addLink(routedLink(link++, node(r, c), node(r, c + 1), 10, 1, LinkDirection::Bidirectional, 8)));
-            if (r + 1 < kSide) ASSERT_OK(t.addLink(routedLink(link++, node(r, c), node(r + 1, c), 10, 1, LinkDirection::Bidirectional, 8)));
+            if (c + 1 < kSide) {
+                ASSERT_OK(t.addLink(routedLink(link++, node(r, c), node(r, c + 1), 10, 1, LinkDirection::Bidirectional, 8)));
+            }
+            if (r + 1 < kSide) {
+                ASSERT_OK(t.addLink(routedLink(link++, node(r, c), node(r + 1, c), 10, 1, LinkDirection::Bidirectional, 8)));
+            }
         }
     }
 
@@ -449,7 +453,9 @@ TEST(ConnectionManagerStress, GridWithManyConnectionsStaysConsistent) {
             ASSERT_OK(m.release(ConnectionId{active[i]}));
             active.erase(active.begin() + static_cast<long>(i));
         }
-        if (op % 400 == 0) ASSERT_TRUE(m.validate().clean()) << "op " << op;
+        if (op % 400 == 0) {
+            ASSERT_TRUE(m.validate().clean()) << "op " << op;
+        }
     }
 
     std::uint64_t expected = 0;

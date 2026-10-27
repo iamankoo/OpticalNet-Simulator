@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <map>
 #include <span>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -86,7 +87,9 @@ private:
     [[nodiscard]] Result<void> checkAllocation(const std::map<LinkId, std::uint64_t>& needed) const;
 
     const Topology* topology_;
-    std::map<LinkId, std::uint32_t> allocated_;  // only links with allocated > 0
+    // Only links with allocated > 0. A hash map because allocated() is called for every edge a capacity-aware route
+    // examines; everything that exposes an order (allocations(), validate()) sorts by LinkId explicitly.
+    std::unordered_map<LinkId, std::uint32_t> allocated_;
 };
 
 }  // namespace opticalnet

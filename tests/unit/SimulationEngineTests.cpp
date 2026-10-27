@@ -51,8 +51,12 @@ Topology grid(std::uint32_t side, std::uint32_t channels) {
     std::uint32_t link = 1;
     for (std::uint32_t r = 0; r < side; ++r) {
         for (std::uint32_t c = 0; c < side; ++c) {
-            if (c + 1 < side) EXPECT_TRUE(t.addLink(routedLink(link++, node(r, c), node(r, c + 1), 10, 1, LinkDirection::Bidirectional, channels)).ok());
-            if (r + 1 < side) EXPECT_TRUE(t.addLink(routedLink(link++, node(r, c), node(r + 1, c), 10, 1, LinkDirection::Bidirectional, channels)).ok());
+            if (c + 1 < side) {
+                EXPECT_TRUE(t.addLink(routedLink(link++, node(r, c), node(r, c + 1), 10, 1, LinkDirection::Bidirectional, channels)).ok());
+            }
+            if (r + 1 < side) {
+                EXPECT_TRUE(t.addLink(routedLink(link++, node(r, c), node(r + 1, c), 10, 1, LinkDirection::Bidirectional, channels)).ok());
+            }
         }
     }
     return t;
@@ -534,7 +538,9 @@ TEST(SimulationRun, RoutingConfigurationIsAppliedToEveryRequest) {
     EXPECT_EQ(r.metrics.maxHopCount, 1u);
     for (const auto& e : r.trace) {
         const bool farApart = (e.source == NodeId{1} && e.destination == NodeId{3}) || (e.source == NodeId{3} && e.destination == NodeId{1});
-        if (e.type == EventType::ConnectionArrival) EXPECT_EQ(e.success, !farApart);
+        if (e.type == EventType::ConnectionArrival) {
+            EXPECT_EQ(e.success, !farApart);
+        }
     }
 }
 
@@ -577,7 +583,9 @@ TEST(SimulationRun, LargeSimulationOnAGridStaysConsistent) {
         EXPECT_GE(e.time, lastTime) << "the trace must be chronological";
         lastTime = e.time;
         if (e.type == EventType::ConnectionArrival && e.success) held[e.connection] = static_cast<std::uint64_t>(e.capacityChannels) * e.hops;
-        if (e.type == EventType::ConnectionRelease) EXPECT_EQ(held.erase(e.connection), 1u) << "release of a connection that was not active";
+        if (e.type == EventType::ConnectionRelease) {
+            EXPECT_EQ(held.erase(e.connection), 1u) << "release of a connection that was not active";
+        }
     }
     std::uint64_t allocatedFromTrace = 0;
     for (const auto& [id, channels] : held) allocatedFromTrace += channels;

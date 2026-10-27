@@ -173,7 +173,9 @@ TEST(ValRouting, TheChosenPathIsIndependentOfLinkInsertionOrder) {
             const auto a = DijkstraRouter{}.findPath(original, s, d, c);
             const auto b = DijkstraRouter{}.findPath(reversed, s, d, c);
             ASSERT_EQ(a.ok(), b.ok());
-            if (a.ok()) EXPECT_EQ(a.value(), b.value()) << s.value() << "->" << d.value();
+            if (a.ok()) {
+                EXPECT_EQ(a.value(), b.value()) << s.value() << "->" << d.value();
+            }
         }
     }
 }

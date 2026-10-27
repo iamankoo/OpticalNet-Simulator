@@ -95,8 +95,12 @@ TEST(RoutingProperty, MatchesExhaustiveSearchOnRandomGraphs) {
             EXPECT_DOUBLE_EQ(actual.value().cost(), expected.cost);
             EXPECT_EQ(actual.value().hopCount(), expected.hops) << "ties resolve to the fewest hops";
             expectValidPath(t, actual.value(), s, d, c.metric);
-            if (c.maxHops) EXPECT_LE(actual.value().hopCount(), *c.maxHops);
-            if (c.maxCost) EXPECT_LE(actual.value().cost(), *c.maxCost);
+            if (c.maxHops) {
+                EXPECT_LE(actual.value().hopCount(), *c.maxHops);
+            }
+            if (c.maxCost) {
+                EXPECT_LE(actual.value().cost(), *c.maxCost);
+            }
             for (LinkId l : actual.value().links()) {
                 EXPECT_FALSE(c.blockedLinks.contains(l));
                 EXPECT_GE(t.findLink(l)->capacityChannels(), c.minLinkCapacityChannels);
@@ -183,8 +187,12 @@ TEST(RoutingLarge, GridOf4900NodesFindsAManhattanShortestPath) {
     std::uint32_t link = 1;
     for (std::uint32_t r = 0; r < kSide; ++r) {
         for (std::uint32_t c = 0; c < kSide; ++c) {
-            if (c + 1 < kSide) ASSERT_OK(t.addLink(routedLink(link++, id(r, c), id(r, c + 1), 5, 1)));
-            if (r + 1 < kSide) ASSERT_OK(t.addLink(routedLink(link++, id(r, c), id(r + 1, c), 5, 1)));
+            if (c + 1 < kSide) {
+                ASSERT_OK(t.addLink(routedLink(link++, id(r, c), id(r, c + 1), 5, 1)));
+            }
+            if (r + 1 < kSide) {
+                ASSERT_OK(t.addLink(routedLink(link++, id(r, c), id(r + 1, c), 5, 1)));
+            }
         }
     }
     RoutingConstraints c;
