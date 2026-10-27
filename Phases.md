@@ -12,7 +12,7 @@ OpticalNet is built in exactly **10 phases**, one at a time. A phase starts only
 | 6 | Multithreaded Simulation | Completed |
 | 7 | Failure & Recovery Simulation | Completed |
 | 8 | Validation & Testing Framework | Completed |
-| 9 | Python + FastAPI Integration | Not started |
+| 9 | Python + FastAPI Integration | Completed |
 | 10 | Optimization, Benchmarking & Release | Not started |
 
 Testing is not deferred to Phase 8: every phase ships its own unit tests. Phase 8 consolidates, extends and automates validation across the whole system.

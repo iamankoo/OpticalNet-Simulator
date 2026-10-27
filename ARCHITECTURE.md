@@ -5,10 +5,16 @@ OpticalNet is a software simulation platform for modeling and validating optical
 ## High-level architecture
 
 ```text
-                FastAPI / Python Layer            (Phase 9)
+                      HTTP client
                         │
                         ▼
-                 API / Integration                (pybind11 bindings)
+                FastAPI / Pydantic                (Phase 9)
+                        │
+                        ▼
+                Python package `opticalnet`       (Phase 9)
+                        │
+                        ▼
+                 pybind11 bindings                (Phase 9)
                         │
                         ▼
                 OpticalNet C++ Core
@@ -221,8 +227,25 @@ Validation Layer   (opticalnet::validation + tests/validation)
 - Checkers return a `ValidationResult` naming each violated invariant with ids and values; tests convert it to ordinary GoogleTest assertions. Randomized tests use fixed seeds, bounded loops and print the seed.
 - The suite is its own executable (`opticalnet_validation_tests`) so it can be run and mutation-tested independently of the unit tests. The validation library is not linked into production targets, and a future API layer is unaffected by it.
 
-### Python integration & FastAPI service (Phase 9)
-pybind11 module exposes load-topology, configure, run, and results. A FastAPI app provides topology and simulation endpoints with Pydantic schemas. The service holds no simulation logic; it translates JSON ⇄ C++ calls. Runs are in-process and kept in memory (no database).
+### Python integration & FastAPI service (Phase 9, implemented)
+```text
+HTTP
+ ↓
+FastAPI            api/main.py, api/routes/*   thin routers, OpenAPI (/docs, /openapi.json)
+ ↓
+Pydantic           api/models.py               shape/range validation, stable error envelope
+ ↓
+Python API         python/opticalnet           re-exports, exception classes with stable `code`
+ ↓
+pybind11           src/python/bindings.cpp     module opticalnet._opticalnet
+ ↓
+C++ OpticalNet     topology · routing · resources · simulation · failures · study · validation
+```
+**Python is an interface layer; C++ remains the simulation engine.** No algorithm is duplicated in Python, and the C++ sources are unchanged by this phase.
+- *Values, not objects:* the binding returns ints, floats, strings, dicts and lists. `Result<T>` becomes a Python exception per `ErrorCode` (each with a stable `code` string that FastAPI maps to an HTTP status); `StrongId<Tag>` is a range-checked `int`.
+- *Ownership:* `Topology` is immutable and held by `std::shared_ptr<const Topology>`; `ConnectionSession` (one `ConnectionManager` + `FailureState`) co-owns it, so nothing outlives what it references. No raw pointer reaches Python.
+- *Threading:* long C++ calls release the GIL and use only copied inputs; replications run on the C++ `ThreadPool` (Python never creates simulation threads). The only shared API object is the immutable-topology store behind one lock; connection managers, failure state and simulations are per request.
+- *Build:* the extension is opt-in (`OPTICALNET_BUILD_PYTHON`), so the C++ libraries and tests build without Python or FastAPI. Details and limitations: `summary.md`.
 
 ### Configuration
 JSON files (parsed with nlohmann/json) for topology and simulation parameters, validated on load into typed config structs. Topology loading exists (Phase 2); simulation configuration arrives in Phase 5. No global configuration state.
@@ -237,7 +260,7 @@ A small `Logger` interface with levels (error/warn/info/debug), thread-safe sink
 - GoogleTest executables per module, aggregated through CTest
 - Unit tests per phase (`opticalnet_unit_tests`) and the Phase 8 validation suite (`opticalnet_validation_tests`): invariant checkers, reference/brute-force oracles, seeded randomized tests, golden fixtures, end-to-end scenarios
 - Sanitizer builds (ASan/UBSan, TSan where supported) remain a possible later addition
-- pytest for the Python API (Phase 9)
+- pytest + FastAPI `TestClient` for the Python binding and HTTP API (`tests/api`, also run by CTest as `python_api_tests` when the extension is enabled)
 
 ## Planned source layout
 
@@ -245,7 +268,9 @@ A small `Logger` interface with levels (error/warn/info/debug), thread-safe sink
 include/opticalnet/   public headers (core, topology, routing, resources, sim, concurrency, failure, validation)
 src/                  implementations
 tests/                GoogleTest suites
-python/               pybind11 module + FastAPI app (Phase 9)
+src/python/           pybind11 bindings (Phase 9)
+python/opticalnet/    Python package re-exporting the extension (Phase 9)
+api/                  FastAPI app: main, models, errors, routes (Phase 9)
 examples/  benchmarks/  docs/
 ```
 

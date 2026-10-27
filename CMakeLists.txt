@@ -10,6 +10,7 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 
 option(OPTICALNET_BUILD_TESTS "Build the OpticalNet test suite" ON)
+option(OPTICALNET_BUILD_PYTHON "Build the pybind11 Python extension (needs Python >= 3.10 with development files)" OFF)
 option(OPTICALNET_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" ON)
 
 add_library(opticalnet_warnings INTERFACE)
@@ -122,4 +123,10 @@ target_link_libraries(opticalnet_validation
 if(OPTICALNET_BUILD_TESTS)
   enable_testing()
   add_subdirectory(tests)
+endif()
+
+# Phase 9: the Python extension is optional; the C++ libraries above never depend on Python.
+# (Added after enable_testing() so that its python_api_tests CTest entry is registered.)
+if(OPTICALNET_BUILD_PYTHON)
+  add_subdirectory(src/python)
 endif()

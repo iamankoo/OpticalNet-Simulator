@@ -1,0 +1,9 @@
+# Runtime (API)
+fastapi>=0.115,<1
+uvicorn>=0.34,<1
+pydantic>=2.7,<3
+# Build of the C++ extension (CMake fetches pybind11 itself; this is for pip-based builds)
+pybind11>=2.13,<3
+# Tests
+pytest>=8
+httpx>=0.27

@@ -10,15 +10,15 @@ Source-of-truth documents: [Phases.md](Phases.md), [ARCHITECTURE.md](ARCHITECTUR
 
 ## Current status
 
-- **Implementation status:** Phases 1 (core domain model, build/test foundation), 2 (topology & graph engine), 3 (routing engine), 4 (resource & connection management), 5 (simulation engine), 6 (multithreaded simulation), 7 (failure & recovery simulation) and 8 (validation & testing framework) are implemented and tested. Phases 9–10 are not started.
-- **Current phase:** Phase 8 complete; ready for Phase 9
-- **Completed phases:** 1, 2, 3, 4, 5, 6, 7, 8
+- **Implementation status:** Phases 1 (core domain model, build/test foundation), 2 (topology & graph engine), 3 (routing engine), 4 (resource & connection management), 5 (simulation engine), 6 (multithreaded simulation), 7 (failure & recovery simulation) 8 (validation & testing framework) and 9 (Python + FastAPI integration) are implemented and tested. Phase 10 is not started.
+- **Current phase:** Phase 9 complete; ready for Phase 10
+- **Completed phases:** 1, 2, 3, 4, 5, 6, 7, 8, 9
 - **In-progress phase:** None
-- **Pending phases:** 9–10
-- **Key implemented components:** `Network`, `Node`, `FiberLink`, `Transceiver`, `SwitchingElement`, `INetworkElement`, strong IDs, `Result<T>`/`Error`, `Topology`, `Adjacency`, `ValidationReport`, `CostMetric`/`linkCost`, JSON topology loader/exporter, `Path`, `RoutingConstraints`, `IRoutingAlgorithm`, `DijkstraRouter`, `RoutingEngine`, `ConnectionRequest`, `Connection`, `ConnectionManager`, `ResourceManager`, `LinkUsage`, `SimulationEngine`, `SimulationConfig`, `RequestGenerator`, `EventQueue`, `Rng`, `SimulationResult`/`SimulationMetrics`, `ThreadPool`, `SimulationStudy`/`StudyConfig`/`StudyResult`/`StudyAggregate`, `SampleStatistics`, `FailureState`, `RecoveryPolicy`, `ScriptedFailure`/`RandomFailureConfig`, `generateRandomFailures`, validation layer (`ValidationResult`, invariant checkers, `exhaustiveRoute`, `ShadowLedger`, deterministic generators)
-- **Current tests/status:** 596 GoogleTest cases (43 Phase 1 + 78 Phase 2 + 74 Phase 3 + 59 Phase 4 + 74 Phase 5 + 62 Phase 6 + 101 Phase 7 + 105 Phase 8), all passing under CTest in Release and Debug (MSVC, warnings-as-errors)
-- **Known limitations:** See the Phase 1–8 summaries. No Python/FastAPI layer yet.
-- **Next phase:** Phase 9 — Python + FastAPI Integration
+- **Pending phases:** 10
+- **Key implemented components:** `Network`, `Node`, `FiberLink`, `Transceiver`, `SwitchingElement`, `INetworkElement`, strong IDs, `Result<T>`/`Error`, `Topology`, `Adjacency`, `ValidationReport`, `CostMetric`/`linkCost`, JSON topology loader/exporter, `Path`, `RoutingConstraints`, `IRoutingAlgorithm`, `DijkstraRouter`, `RoutingEngine`, `ConnectionRequest`, `Connection`, `ConnectionManager`, `ResourceManager`, `LinkUsage`, `SimulationEngine`, `SimulationConfig`, `RequestGenerator`, `EventQueue`, `Rng`, `SimulationResult`/`SimulationMetrics`, `ThreadPool`, `SimulationStudy`/`StudyConfig`/`StudyResult`/`StudyAggregate`, `SampleStatistics`, `FailureState`, `RecoveryPolicy`, `ScriptedFailure`/`RandomFailureConfig`, `generateRandomFailures`, validation layer (`ValidationResult`, invariant checkers, `exhaustiveRoute`, `ShadowLedger`, deterministic generators), pybind11 module `opticalnet._opticalnet`, Python package `opticalnet`, FastAPI app (`api/`)
+- **Current tests/status:** 596 GoogleTest cases (43 Phase 1 + 78 Phase 2 + 74 Phase 3 + 59 Phase 4 + 74 Phase 5 + 62 Phase 6 + 101 Phase 7 + 105 Phase 8), all passing under CTest in Release and Debug (MSVC, warnings-as-errors); plus 102 Python/API pytest cases (binding + HTTP), run by CTest as `python_api_tests` (597 CTest entries when the extension is enabled)
+- **Known limitations:** See the Phase 1–9 summaries.
+- **Next phase:** Phase 10 — Optimization, Benchmarking & Release
 
 ## Phase 1 Summary
 
@@ -563,12 +563,86 @@ The validation executable is separate so the validation layer can be run — and
 - No coverage measurement, sanitizers or fuzzing tool (no MSVC ThreadSanitizer); only MSVC was tested.
 - The Debug run of the validation executable is slow (~85 s) because of the stress tests.
 
-**Commit:** `test: implement OpticalNet phase 8 validation framework` on `main` (the hash is in `git log`; a commit cannot contain its own hash).
+**Commit:** `580969c59c7a102083393bd5585a5dc458ccce16` — `test: implement OpticalNet phase 8 validation framework`.
 
-**Next phase:** Phase 9 — Python + FastAPI Integration
+**Next phase:** Phase 9 — Python + FastAPI Integration (completed below)
 
 ## Phase 9 Summary
-Not started
+
+**Status:** Completed
+
+> Phase 9 makes the C++ engine usable from Python and over HTTP. **Python is an interface layer only**: no algorithm (graph, routing, resource accounting, simulation, failures, studies, validation) was re-implemented in Python, and no C++ production source was modified. Every number returned by the API was produced by the C++ engine.
+
+**Architecture**
+```text
+HTTP client
+   │
+FastAPI  (api/main.py, api/routes/*)          thin routers, OpenAPI at /docs and /openapi.json
+   │
+Pydantic (api/models.py)                      request/response shape and range checks only
+   │
+Python package `opticalnet` (python/opticalnet)   re-exports the extension, stable exception classes
+   │
+pybind11 (src/python/bindings.cpp)            module `opticalnet._opticalnet`
+   │
+C++ OpticalNet: Topology · Routing · Resources · Simulation · Failures/Recovery · Study (thread pool) · Validation
+```
+- **Binding module** (`src/python/bindings.cpp`, CMake option `OPTICALNET_BUILD_PYTHON`, default OFF, so the C++ libraries and tests never need Python; pybind11 2.13.6 via `FetchContent`). Output: `python/opticalnet/_opticalnet.<tag>.pyd|so` (git-ignored), or any directory given by `OPTICALNET_PYTHON_OUTPUT_DIR`.
+- **IDs** are plain Python ints (range-checked to `uint32`; out-of-range values raise `InvalidArgumentError` instead of wrapping). Enums are strings (`hop_count|distance|administrative`, `exponential|fixed`, `reroute|no_recovery`, `fail_link|recover_link|fail_node|recover_node`). Results are dicts/lists of plain values with snake_case keys; `Result<T>`, `StrongId<Tag>` and raw pointers are never exposed.
+
+**Exposed C++ functionality**
+- *Topology:* `Topology` (`from_json`, `from_file`, `to_json`, `nodes()`, `links()`, `transceivers()`, `switching_elements()`, `node(id)`, `link(id)`, `neighbors`, `links_between`, `is_reachable`, `is_connected`, `is_strongly_connected`, `connected_components`, `validate`), `load_topology`, `topology_from_json`. Parsing is done by the C++ loader, so the strict Phase 2 schema (unknown keys rejected) stays the single schema.
+- *Routing:* `route(...)` / `RoutingConstraints` + `route_with(...)`: metric, `max_cost`, `max_hops`, `min_link_capacity`, blocked nodes/links. The `linkFilter` callable is deliberately not exposed (a Python callback invoked from C++ threads would need the GIL and break determinism); capacity-aware routing is available through `ConnectionSession`.
+- *Resources/connections:* `ConnectionSession` wraps one C++ `ConnectionManager` (+ its `ResourceManager` and a `FailureState` overlay used as the availability predicate): `establish`, `release`, `connection(s)`, `usage(s)`, `totals`, `fail_/recover_link|node`, `validate` (manager validation plus the Phase 8 `checkResources`/`checkConnections`). No Python-side ledger.
+- *Simulation:* `SimulationConfig` (seed, end time, max requests, arrival rate/timing, mean lifetime/timing, demand range, routing, failure schedule, random failures, recovery policy, trace), `ScriptedArrival`, `simulate(topology, config, arrivals=None)` → seed + full `SimulationMetrics` (+ optional trace).
+- *Failures/recovery:* scripted (`ScriptedFailure`) and random (`RandomFailureConfig`) failures, `reroute`/`no_recovery`; affected/rerouted/lost counts, recovery success rate, downtime come straight from C++.
+- *Studies:* `run_study(topology, config, replications, base_seed, workers)` calls `SimulationStudy::run`; the C++ pool owns all threads. Returns per-replication results, the full `StudyAggregate` (totals, means, std dev, standard error, 95% CI [`mean ± half-width`, formed from the C++ half-width]) and `workers_used`.
+- *Validation:* `validate_topology` (`Topology::validate` + `checkTopology`) and `validate_simulation` (traced run + `checkSimulationTrace`).
+
+**Error mapping.** Each C++ `ErrorCode` has a Python exception class (subclass of `OpticalNetError`) with a stable `code` string, so `NotFoundError`, `NoRouteError`, `NoFeasibleRouteError`, `InsufficientCapacityError`, `InvalidTransitionError`, `ResourceUnavailableError`, … stay distinguishable. HTTP mapping (`api/errors.py`): `NOT_FOUND`, `NO_ROUTE`, `NO_FEASIBLE_ROUTE` → 404; `INVALID_ARGUMENT`, `PARSE_ERROR` → 422; `DUPLICATE_ID`, `CONSTRAINT_VIOLATION`, `INSUFFICIENT_CAPACITY`, `INVALID_TRANSITION`, `RESOURCE_UNAVAILABLE` → 409; `INCONSISTENT_STATE`, `INTERNAL_ERROR` → 500. Pydantic failures → 422 `VALIDATION_ERROR` (with field locations); oversized bodies → 413; a topology document that the C++ loader rejects is always 422 (it is the request body that is wrong) with the engine's code kept. Response shape: `{"error": {"code": ..., "message": ...}}`. Unexpected exceptions return a generic `INTERNAL_ERROR` (details stay in the server log) and are never swallowed.
+
+**Ownership / lifetime.** `Topology` is immutable and held by `std::shared_ptr<const Topology>`. `ConnectionSession` co-owns that pointer (declared before the `FailureState` and `ConnectionManager` that reference it) and is registered with `keep_alive`, so a topology cannot disappear while a manager depends on it (tested: `del topology; gc.collect()` then keep using the session). Every returned value is a copy into Python objects; nothing aliases C++ internals.
+
+**Thread-safety / GIL.** `simulate`, `run_study`, `route`, `validate_*` and topology parsing copy their inputs, release the GIL (`py::gil_scoped_release`) and touch only C++ data, so FastAPI's worker threads run simulations truly concurrently (tested: 8 threads give results identical to serial runs; a ticking Python thread keeps running during a long simulation). The only shared object in the API is the in-memory `TopologyStore` (immutable topologies, one lock, at most 64 entries). Connection managers, failure state and simulations are created per request and destroyed with it — the `/connections/scenario` endpoint applies a list of operations in one request instead of keeping a session between requests. `ConnectionSession` itself is not thread-safe (documented); the module holds no mutable global state.
+
+**Endpoints.** `GET /health`; `POST /topologies` (201, body = topology document), `GET /topologies`, `GET|DELETE /topologies/{id}`, `GET /topologies/{id}/export|nodes|links`, `.../nodes/{id}`, `.../links/{id}`; `POST /route`; `POST /connections/scenario`; `POST /simulate`; `POST /study`; `POST /validate`. Every operation accepts either `topology_id` or an inline `topology` document (parsed by C++). `/docs` and `/openapi.json` are served with summaries, descriptions and typed request/response/error models. Run: `uvicorn api.main:app --reload`.
+
+**Pydantic models** (`api/models.py`): range checks on ids (uint32), demand ≥ 1, times, rates, `min_demand ≤ max_demand`, enum literals, worker count 0..64, replications 1..10,000, scripted/random failures mutually exclusive, bounded work per request (`end_time × arrival_rate` ≤ 1,000,000), `extra="forbid"` everywhere. Domain correctness (does a node exist, is a failure transition valid, …) is left to C++.
+
+**Security/safety.** No shell, code or dynamic imports from input; no filesystem paths accepted (topologies arrive as JSON, never as paths); body size limited (8 MB, topology 4 MB); no addresses or C++ exception strings in responses; no authentication (local service, out of scope).
+
+**Build and run**
+```bash
+pip install -r requirements.txt
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DOPTICALNET_BUILD_PYTHON=ON
+cmake --build build                       # builds the C++ libraries, tests and the extension
+python -m pytest tests/api -q             # or: ctest --test-dir build  (includes python_api_tests)
+uvicorn api.main:app --reload
+```
+Dependencies: Python ≥ 3.10 (tested 3.10.11), FastAPI (tested 0.115.6), Pydantic (2.13.4), Uvicorn (0.34.0), pybind11 2.13.6 (CMake `FetchContent`), pytest 8.3.4 and httpx 0.28.1 for tests.
+
+**Tests** (`tests/api`, pytest + FastAPI `TestClient`; no mocks of the engine except where an engine exception is injected to test error mapping): **102 Python tests** — binding 22 (compiled-extension check, topology introspection, routing mapping, every error class, session lifecycle and failure overlay, keep-alive, config properties, determinism, study = standalone runs, concurrency/GIL, validators), topology+routing API 29 (health, docs/OpenAPI, valid/invalid topology documents incl. unknown keys, nodes/links, store limit, directed and parallel links, constraints, error codes), connections 9, simulation/failure/study/validation 24, error mapping and end-to-end 18 (all 12 codes → status, unexpected errors don't leak, the HTTP → C++ → JSON chain on `configs/ring4.json`, concurrent requests). Failure tests cover link/node failure with reroute, no-recovery loss, second failure losing a rerouted connection (downtime 44), recovery, invalid schedules and random failures; study tests cover determinism across 1/2/4/auto workers, `workers_used`, replication = standalone run for its derived seed, and failure aggregates.
+
+**C++ regression:** no C++ production or test source changed: the 596 GoogleTest cases (43+78+74+59+74+62+101+105) are untouched; new C++ tests: 0. CTest with the extension enabled has 597 tests (596 + `python_api_tests`, which runs the 102 pytest cases).
+
+**Integration mutation testing** (binding/API deliberately broken, Python suite must fail, then restored byte-identical and rebuilt; 17/17 caught, failing tests in parentheses): swapped source/destination in C++ (9) and in the API (8); wrong metric mapping (7); dropped blocked-node constraint (4); wrong error-code mapping (6); wrong `hop_count` serialization (4); wrong worker count (4); base seed not propagated in a study (1); demand altered on establish (7); confidence-interval sign (1); NO_ROUTE HTTP status (6); simulation seed not propagated (4); dropped failure schedule (7), recovery policy (3), random failures (3), `min_link_capacity` (2), blocked links (3). Three of the C++ mutations first failed to compile under warnings-as-errors (unused parameter) and were redone in a warning-free form.
+
+**Build/validation results:** clean configure+build of Release and Debug with warnings-as-errors, zero warnings, C++20. **Release: 596/596 GoogleTest cases passed** (~12 s with `-j4`) and `python_api_tests` passed (102/102 pytest cases, ~12 s under CTest). **Debug: 596/596 passed** (~121 s) and `python_api_tests` passed against the Debug extension (~177 s). CTest total with the extension enabled: 597 entries. Python/API: **102/102** (the suite was run repeatedly without a failure). A real `uvicorn api.main:app` server answered `/health`, `/docs`, `/openapi.json` (all 200) and a real `POST /route` against `configs/ring4.json` (path `[1,2,3]`, cost 300, 2 hops). A default configure (`OPTICALNET_BUILD_PYTHON=OFF`) builds the C++ libraries and tests without Python. Toolchain unchanged (MSVC 19.44.35229, CMake 3.31.6, Ninja 1.13.0).
+
+**Important decisions:** pybind11 (as planned) over ctypes/CFFI/subprocess; dicts and strings instead of exposing C++ classes (stable, JSON-friendly, nothing to dangle); one request-scoped C++ state instead of server-side sessions; threads only in C++; the extension is opt-in via CMake; errors keep the engine's stable code.
+
+**Known limitations:**
+- Only Windows/MSVC/Python 3.10 was tested; the extension must be built for the Python it will run under; no wheel/packaging (release packaging is Phase 10).
+- `RoutingConstraints::linkFilter` is not exposed; topologies are immutable once loaded (no mutation API; submit a new document).
+- The Debug extension links the release Python library (standard pybind11 behaviour); the Python tests pass against both the Release and the Debug extension (Debug is slow: ~177 s).
+- Results carry no persistence and the topology store is in memory (max 64); no authentication; response times are not benchmarked.
+- `include_trace` on large runs produces large responses (the trace is only returned on request, and never for studies).
+- `CONSTRAINT_VIOLATION` and `RESOURCE_UNAVAILABLE` have exception classes and HTTP mappings but are not reachable through the current API surface (they are tested via injected exceptions).
+
+**Commit:** `feat: implement OpticalNet Python and FastAPI integration` on `main` (the hash is in `git log`).
+
+**Next phase:** Phase 10 — Optimization, Benchmarking & Release (not started)
+
 
 ## Phase 10 Summary
 Not started

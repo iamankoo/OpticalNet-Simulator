@@ -10,3 +10,10 @@ CMakeUserPresets.json
 .env
 .env.*
 CLAUDE.md
+__pycache__/
+*.pyc
+.pytest_cache/
+*.pyd
+*.so
+.venv/
+venv/
