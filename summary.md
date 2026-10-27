@@ -10,15 +10,15 @@ Source-of-truth documents: [Phases.md](Phases.md), [ARCHITECTURE.md](ARCHITECTUR
 
 ## Current status
 
-- **Implementation status:** Phases 1 (core domain model, build/test foundation), 2 (topology & graph engine), 3 (routing engine), 4 (resource & connection management), 5 (simulation engine), 6 (multithreaded simulation) and 7 (failure & recovery simulation) are implemented and tested. Phases 8–10 are not started.
-- **Current phase:** Phase 7 complete; ready for Phase 8
-- **Completed phases:** 1, 2, 3, 4, 5, 6, 7
+- **Implementation status:** Phases 1 (core domain model, build/test foundation), 2 (topology & graph engine), 3 (routing engine), 4 (resource & connection management), 5 (simulation engine), 6 (multithreaded simulation), 7 (failure & recovery simulation) and 8 (validation & testing framework) are implemented and tested. Phases 9–10 are not started.
+- **Current phase:** Phase 8 complete; ready for Phase 9
+- **Completed phases:** 1, 2, 3, 4, 5, 6, 7, 8
 - **In-progress phase:** None
-- **Pending phases:** 8–10
-- **Key implemented components:** `Network`, `Node`, `FiberLink`, `Transceiver`, `SwitchingElement`, `INetworkElement`, strong IDs, `Result<T>`/`Error`, `Topology`, `Adjacency`, `ValidationReport`, `CostMetric`/`linkCost`, JSON topology loader/exporter, `Path`, `RoutingConstraints`, `IRoutingAlgorithm`, `DijkstraRouter`, `RoutingEngine`, `ConnectionRequest`, `Connection`, `ConnectionManager`, `ResourceManager`, `LinkUsage`, `SimulationEngine`, `SimulationConfig`, `RequestGenerator`, `EventQueue`, `Rng`, `SimulationResult`/`SimulationMetrics`, `ThreadPool`, `SimulationStudy`/`StudyConfig`/`StudyResult`/`StudyAggregate`, `SampleStatistics`, `FailureState`, `RecoveryPolicy`, `ScriptedFailure`/`RandomFailureConfig`, `generateRandomFailures`
-- **Current tests/status:** 491 GoogleTest cases (43 Phase 1 + 78 Phase 2 + 74 Phase 3 + 59 Phase 4 + 74 Phase 5 + 62 Phase 6 + 101 Phase 7), all passing under CTest in Release and Debug (MSVC, warnings-as-errors)
-- **Known limitations:** See the Phase 1–7 summaries. No generalized validation framework or Python layer yet.
-- **Next phase:** Phase 8 — Validation & Testing Framework
+- **Pending phases:** 9–10
+- **Key implemented components:** `Network`, `Node`, `FiberLink`, `Transceiver`, `SwitchingElement`, `INetworkElement`, strong IDs, `Result<T>`/`Error`, `Topology`, `Adjacency`, `ValidationReport`, `CostMetric`/`linkCost`, JSON topology loader/exporter, `Path`, `RoutingConstraints`, `IRoutingAlgorithm`, `DijkstraRouter`, `RoutingEngine`, `ConnectionRequest`, `Connection`, `ConnectionManager`, `ResourceManager`, `LinkUsage`, `SimulationEngine`, `SimulationConfig`, `RequestGenerator`, `EventQueue`, `Rng`, `SimulationResult`/`SimulationMetrics`, `ThreadPool`, `SimulationStudy`/`StudyConfig`/`StudyResult`/`StudyAggregate`, `SampleStatistics`, `FailureState`, `RecoveryPolicy`, `ScriptedFailure`/`RandomFailureConfig`, `generateRandomFailures`, validation layer (`ValidationResult`, invariant checkers, `exhaustiveRoute`, `ShadowLedger`, deterministic generators)
+- **Current tests/status:** 596 GoogleTest cases (43 Phase 1 + 78 Phase 2 + 74 Phase 3 + 59 Phase 4 + 74 Phase 5 + 62 Phase 6 + 101 Phase 7 + 105 Phase 8), all passing under CTest in Release and Debug (MSVC, warnings-as-errors)
+- **Known limitations:** See the Phase 1–8 summaries. No Python/FastAPI layer yet.
+- **Next phase:** Phase 9 — Python + FastAPI Integration
 
 ## Phase 1 Summary
 
@@ -494,14 +494,78 @@ Immutable Topology  +  FailureState (failed links, failed nodes)  =  current net
 - A user `linkFilter` in the config is still called from several threads in a study and must be thread-safe.
 - Only MSVC was tested; no ThreadSanitizer run.
 
-**Commit:** `feat: implement OpticalNet phase 7 failure and recovery simulation` on `main` (the hash is in `git log`; a commit cannot contain its own hash).
+**Commit:** `217be79114d825a35937adf529f19fa754292eb5` — `feat: implement OpticalNet phase 7 failure and recovery simulation`.
 
-**Next phase:** Phase 8 — Validation & Testing Framework
+**Next phase:** Phase 8 — Validation & Testing Framework (completed below)
 
 **Final build results:** clean rebuild from scratch and `ctest`: **Debug 491/491 passed** (~121 s), **Release 491/491 passed** (~11 s). Zero warnings under warnings-as-errors; C++20 confirmed in the compile commands. Toolchain unchanged (MSVC 19.44.35229, CMake 3.31.6, Ninja 1.13.0). All 101 Phase 7 tests were additionally run 30 times in a row in Release and 3 times in a row in Debug with no failure. The large failure study (12 replications run sequentially and in parallel, with trace-based verification) takes about 0.4 s in Release.
 
 ## Phase 8 Summary
-Not started
+
+**Status:** Completed
+
+> Phase 8 provides **project-specific validation** of OpticalNet's behaviour: independent invariant checkers, reference models, deterministic randomized testing and end-to-end scenarios. It is not a generic testing framework and it does not replace GoogleTest, which remains the test runner.
+
+**Objective:** Turn the existing unit tests into a systematic answer to "how do we know OpticalNet is correct across topology, routing, resources, simulation, failure/recovery, determinism and large workloads?"
+
+**Validation architecture** (`include/opticalnet/validation/`, `src/validation/`, library `opticalnet::validation`; tests in `tests/validation/`, built as their own executable `opticalnet_validation_tests`, discovered by CTest, with hand-computed fixtures in `tests/validation/fixtures/*.json`):
+```text
+Production components (core, topology, routing, resources, simulation, failures, concurrency)
+        │   checked, never modified, by
+        ▼
+Validation layer:  Invariants │ Reference models │ Generators │ Scenario / randomized / stress / negative tests
+```
+The validation executable is separate so the validation layer can be run — and mutation-tested — without the unit tests. The validation library is not linked into any production target.
+
+**Invariant system** (`Invariants.hpp`; each checker returns a `ValidationResult` listing named failures with ids and expected/actual values, and recomputes what it checks from raw data instead of asking the production component):
+- `checkTopology` — referenced nodes/links/equipment exist, ids unique and equal to their map keys, no self-links, positive capacity/length/cost, the adjacency index (outgoing, incident, degree, LinkId ordering, directed vs. bidirectional rules) recomputed independently from the link list, unique equipment attachment, port constraints (optional).
+- `checkFailureState` — failed ids exist; a link is unusable exactly when it, or an end node, is failed.
+- `checkPath` — correct source/destination, a simple chain of existing links each traversable in the direction used, `hopCount` == number of links, cost recomputed link by link under the selected metric (with the metric formulas written out again, not `linkCost()`), parallel-link identity, and (when given) hop/cost limits, blocked nodes/links, minimum capacity, link filter, no failed link or node.
+- `checkResources` — per link `0 ≤ allocated ≤ capacity` and `allocated + available == capacity`; `totalAllocated` == sum of per-link allocations, `totalCapacity` == sum of capacities, `totalAvailable == totalCapacity − totalAllocated`; no allocation on unknown links.
+- `checkConnections` — every active connection has positive demand and a valid feasible path from its source to its destination avoiding failed resources; an independent shadow ledger summing the demands of all active connections equals the `ResourceManager`'s allocation on every link (so lost connections provably hold nothing).
+- `checkSimulationTrace` — replays the optional trace with an independent ledger and checks time never goes backwards, same-timestamp events follow recoveries → failures → releases → arrivals, every release/reroute/loss refers to an active/affected connection, capacity is never exceeded, and recomputes accepted/rejected/rejection reasons/releases/failure and recovery counts/affected/rerouted/lost/peak and final allocation/active connections/hop statistics/rates/recovery rate and the **time-weighted utilization** — then compares all of them with the reported metrics.
+
+**Independent reference models** (`ReferenceModels.hpp`): `exhaustiveRoute` enumerates every simple path (over individual links) with its own direction rule, cost formula and constraint checks (hop/cost limits, blocked elements, capacity, link filter, failure overlay), scanning the raw link list rather than the adjacency index; `reachableByAnyPath` (to tell `NoRoute` from `NoFeasibleRoute`); `ShadowLedger`, a separate all-or-nothing allocation model. At scale (5000 nodes) the production Dijkstra is compared with a queue-based **Bellman-Ford** over the raw link list — a different algorithm — instead of itself.
+
+**Deterministic generators** (`Generators.hpp`, built on the existing `Rng`, explicit seeds, always valid data): `generateRandomTopology` (weakly connected; directed, parallel and bidirectional links; integer weights so ties are real; switches with enough ports; transceivers), `generateRandomConstraints`, `generateRandomRequests`, `generateRandomFailureScript` (tracks state itself, independent of the production random-failure model). Randomized tests print the seed (`SCOPED_TRACE`), topology size, source/destination, metric and limits so any failure can be reproduced; they have fixed iteration counts and finish quickly.
+
+**Randomized validation (tests):**
+- *Topology:* 100 random topologies + 15 larger ones satisfy every invariant; 25 random mutation sequences × 60 operations (add/remove nodes and links, deliberately invalid operations) keep the invariants and rejected operations leave the fingerprint unchanged; JSON round trips; failure overlays leave the topology byte-identical.
+- *Routing:* **production Dijkstra == exhaustive enumeration** on 100 random topologies × 20 random constrained requests each (half with a failure overlay), comparing optimal cost, fewest hops and the error class (`NoRoute` iff unreachable), validating every returned path; cost and hop limits are exact at the boundary; results independent of link insertion order.
+- *Resources:* 50 seeds × 300 random allocate/release operations (including invalid ones, repeated links and over-release) agree with the shadow ledger on every outcome and error code, per link, after every operation.
+- *Connection layer (cross-layer):* 40 seeds × 120 random establish/release/fail/recover operations with the failure overlay; every establish is compared with an oracle that knows the free capacity, the constraints and the failures (success/cost/hops and the error class `InsufficientCapacity`/`NoFeasibleRoute`/`NoRoute`), the returned path is the registered and allocated one, and `checkConnections`/`checkResources`/`checkFailureState` run after every operation.
+- *Simulation:* 40 generated runs, 40 generated runs with random failures, and 40 scripted runs with random failure scripts are independently replayed from their traces; a `ConnectionManager` driven only from a trace accepts exactly the connections the simulation accepted.
+- *Failure/recovery:* a 40 × 120-step random walk of the failure state against an independent model (including invalid transitions and unknown ids), 40 random failure scripts through full simulations, no leaks between replications.
+
+**End-to-end scenarios (tests):** (1) normal lifecycle, (2) congestion → alternate route then rejection, never over-allocation, (3) link failure → detection → reroute under the same `ConnectionId`, (4) node failure → alternate route → recovery restores the route, (5) unrecoverable connection is lost with nothing leaked, (6) a parallel study equals its single-worker execution; plus congestion combined with failure, constraints surviving recovery, and same-timestamp event ordering.
+
+**Determinism validation:** same topology + config + seed → identical trace, metrics, failure sequence; studies with 1, 2, 4, automatic and 64 workers give identical per-replication results and aggregates (with and without random failures); repeated parallel studies identical; each replication equals its standalone run; replication seeds are distinct and independent of the worker count; failures do not change the request workload. Different seeds are *not* required to differ.
+
+**Golden / reference scenarios:** nine hand-computed fixtures (`simple_line`, `triangle`, `ring`, `parallel_links`, `directed_graph`, `capacity_congestion`, `link_failure`, `node_failure`, `reroute`) with exact expected paths, links, costs and outcomes in `GoldenFixtureTests.cpp` (e.g. the triangle picks a different route under each metric; the ring tie-breaks to the smaller predecessor; parallel links keep their ids).
+
+**Negative testing:** invalid nodes, links, connections, constraints, paths, duplicate ids, impossible capacities, unknown resources, invalid failure transitions, invalid simulation/failure/study configurations and invalid scripts are all verified to return the documented `Result` error codes, without throwing (programming errors such as a null algorithm, popping an empty queue or invalid generator configuration do throw, and are tested as such), and to leave the state unchanged.
+
+**Stress / stability (bounded, correctness only):** routing on a 5000-node graph versus Bellman-Ford; 20,000 allocation/release operations against the ledger; ~5000 simulated requests replayed from the trace; ~800 failure/recovery events with hundreds of affected connections; 24 replications on 8 workers with failures equal to the 1-worker run and each validated; 2500 scripted requests with 150 scripted failure operations.
+
+**Validator self-tests (24):** the validators are shown to notice problems — fabricated paths with wrong cost, endpoints, missing/disconnected/backward links, failed or blocked elements, constraint violations, repeated nodes and metric mismatches; over-capacity and orphan allocations; a connection left on a failed resource; a path invalidated by a topology change; tampered metrics (16 different fields) and tampered traces; the reference models on hand-checked cases.
+
+**Mutation testing (validation suite only; production code mutated with warnings-as-errors off, then restored and verified byte-identical).** All 14 were caught:
+1 ignore failed links (29 validation tests failed) · 2 ignore failed nodes (21) · 3 allow allocation above capacity (4) · 4 incorrect total allocation (38) · 5 incorrect path cost (20) · 6 incorrect hop count (45) · 7 ignore maxHops (5) · 8 ignore maxCost (4) · 9 incorrect connection release (27) · 10 incorrect simulation utilization (20) · 11 incorrect event ordering (**initially not caught** — the suite had no same-timestamp ordering check; fixed by adding the order check to `checkSimulationTrace` and an ordering scenario, after which 4 tests fail) · 12 failure state shared between replications (42) · 13 incorrect seed derivation (1) · 14 reroute relaxing the connection's constraints (1; an engine-level scenario was added because the connection-level random test mirrors the engine's logic rather than running it).
+
+**Test count and results:** 596 total = 43 Phase 1 + 78 Phase 2 + 74 Phase 3 + 59 Phase 4 + 74 Phase 5 + 62 Phase 6 + 101 Phase 7 + 105 Phase 8 (all earlier tests unchanged). The 105 Phase 8 tests: validator self-tests 24, topology 8, routing 6, resources 3, connection layer 4, simulation 6, failures 6, determinism 7, scenarios 10, golden fixtures 9, negative inputs 9, stress 6, generators 7. Clean rebuild and `ctest`: **Debug 596/596 passed** (~103 s with `ctest -j 4`; the validation executable alone ~85 s in Debug), **Release 596/596 passed** (~16 s). The validation suite also passed 15 consecutive runs in Release. Zero warnings under warnings-as-errors; C++20 confirmed in the compile commands. Toolchain unchanged (MSVC 19.44.35229, CMake 3.31.6, Ninja 1.13.0); only MSVC was tested.
+
+**Important design decisions:** validators recompute from raw data and use different algorithms from the code they check (exhaustive enumeration, Bellman-Ford, shadow ledgers, trace replay); the validation executable is separate so it can be mutation-tested alone; randomized tests use fixed seeds, bounded iteration counts and coverage assertions (each outcome class must actually occur); every validator has a self-test showing that it detects violations; no new dependency, no global state.
+
+**Known limitations:**
+- Exhaustive routing comparison is limited to small graphs (≤ ~7 nodes); larger graphs use the Bellman-Ford cross-check for cost only.
+- The trace carries hop counts, not paths, so the trace replay cannot verify individual paths or total connection downtime; those are validated at the manager level and by the unit tests.
+- Randomized tests cover seeds 1..N only; they are bounded, not exhaustive, and are not a substitute for formal verification.
+- No coverage measurement, sanitizers or fuzzing tool (no MSVC ThreadSanitizer); only MSVC was tested.
+- The Debug run of the validation executable is slow (~85 s) because of the stress tests.
+
+**Commit:** `test: implement OpticalNet phase 8 validation framework` on `main` (the hash is in `git log`; a commit cannot contain its own hash).
+
+**Next phase:** Phase 9 — Python + FastAPI Integration
 
 ## Phase 9 Summary
 Not started

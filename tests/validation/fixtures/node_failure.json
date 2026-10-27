@@ -1,0 +1,71 @@
+{
+  "nodes": [
+    {
+      "id": 1,
+      "name": "A"
+    },
+    {
+      "id": 2,
+      "name": "B"
+    },
+    {
+      "id": 3,
+      "name": "C"
+    },
+    {
+      "id": 4,
+      "name": "D"
+    },
+    {
+      "id": 5,
+      "name": "E"
+    }
+  ],
+  "links": [
+    {
+      "id": 1,
+      "name": "A-B",
+      "source": 1,
+      "target": 2,
+      "length_km": 10,
+      "capacity_channels": 10,
+      "cost": 1
+    },
+    {
+      "id": 2,
+      "name": "B-C",
+      "source": 2,
+      "target": 3,
+      "length_km": 10,
+      "capacity_channels": 10,
+      "cost": 1
+    },
+    {
+      "id": 3,
+      "name": "A-D",
+      "source": 1,
+      "target": 4,
+      "length_km": 10,
+      "capacity_channels": 10,
+      "cost": 1
+    },
+    {
+      "id": 4,
+      "name": "D-E",
+      "source": 4,
+      "target": 5,
+      "length_km": 10,
+      "capacity_channels": 10,
+      "cost": 1
+    },
+    {
+      "id": 5,
+      "name": "E-C",
+      "source": 5,
+      "target": 3,
+      "length_km": 10,
+      "capacity_channels": 10,
+      "cost": 1
+    }
+  ]
+}

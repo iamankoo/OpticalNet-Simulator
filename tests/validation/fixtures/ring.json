@@ -1,0 +1,84 @@
+{
+  "nodes": [
+    {
+      "id": 1,
+      "name": "N1"
+    },
+    {
+      "id": 2,
+      "name": "N2"
+    },
+    {
+      "id": 3,
+      "name": "N3"
+    },
+    {
+      "id": 4,
+      "name": "N4"
+    },
+    {
+      "id": 5,
+      "name": "N5"
+    },
+    {
+      "id": 6,
+      "name": "N6"
+    }
+  ],
+  "links": [
+    {
+      "id": 1,
+      "name": "r1",
+      "source": 1,
+      "target": 2,
+      "length_km": 10,
+      "capacity_channels": 10,
+      "cost": 1
+    },
+    {
+      "id": 2,
+      "name": "r2",
+      "source": 2,
+      "target": 3,
+      "length_km": 10,
+      "capacity_channels": 10,
+      "cost": 1
+    },
+    {
+      "id": 3,
+      "name": "r3",
+      "source": 3,
+      "target": 4,
+      "length_km": 10,
+      "capacity_channels": 10,
+      "cost": 1
+    },
+    {
+      "id": 4,
+      "name": "r4",
+      "source": 4,
+      "target": 5,
+      "length_km": 10,
+      "capacity_channels": 10,
+      "cost": 1
+    },
+    {
+      "id": 5,
+      "name": "r5",
+      "source": 5,
+      "target": 6,
+      "length_km": 10,
+      "capacity_channels": 10,
+      "cost": 1
+    },
+    {
+      "id": 6,
+      "name": "r6",
+      "source": 6,
+      "target": 1,
+      "length_km": 10,
+      "capacity_channels": 10,
+      "cost": 1
+    }
+  ]
+}

@@ -1,0 +1,49 @@
+{
+  "nodes": [
+    {
+      "id": 1,
+      "name": "A"
+    },
+    {
+      "id": 2,
+      "name": "B"
+    },
+    {
+      "id": 3,
+      "name": "C"
+    },
+    {
+      "id": 4,
+      "name": "D"
+    }
+  ],
+  "links": [
+    {
+      "id": 1,
+      "name": "A-B",
+      "source": 1,
+      "target": 2,
+      "length_km": 10,
+      "capacity_channels": 10,
+      "cost": 1
+    },
+    {
+      "id": 2,
+      "name": "B-C",
+      "source": 2,
+      "target": 3,
+      "length_km": 20,
+      "capacity_channels": 10,
+      "cost": 2
+    },
+    {
+      "id": 3,
+      "name": "C-D",
+      "source": 3,
+      "target": 4,
+      "length_km": 30,
+      "capacity_channels": 10,
+      "cost": 3
+    }
+  ]
+}

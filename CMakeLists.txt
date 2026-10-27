@@ -108,6 +108,17 @@ target_link_libraries(opticalnet_simulation
   PUBLIC opticalnet::resources opticalnet::failures opticalnet::concurrency
   PRIVATE opticalnet_warnings)
 
+add_library(opticalnet_validation STATIC
+  src/validation/ValidationResult.cpp
+  src/validation/Invariants.cpp
+  src/validation/ReferenceModels.cpp
+  src/validation/Generators.cpp
+)
+add_library(opticalnet::validation ALIAS opticalnet_validation)
+target_link_libraries(opticalnet_validation
+  PUBLIC opticalnet::simulation
+  PRIVATE opticalnet_warnings)
+
 if(OPTICALNET_BUILD_TESTS)
   enable_testing()
   add_subdirectory(tests)

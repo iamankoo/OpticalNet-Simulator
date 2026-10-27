@@ -202,8 +202,24 @@ Immutable Topology  +  Failure Overlay (failed links, failed nodes)  =  Current 
 ### Metrics collection
 `MetricsCollector` records accepted/blocked counts, blocking probability, link utilization, path lengths, and (Phase 7) affected/restored/dropped connections and recovery time. Metrics are plain data structs, exportable to JSON for the API.
 
-### Validation framework (Phase 8)
-Reusable checkers — resource consistency, path validity (continuity, constraints, optimality vs. reference), request-count conservation — plus integration/e2e tests with golden outputs, sanitizer runs and a CI workflow. Checkers are library code so the API can call them too.
+### Validation framework (Phase 8, implemented)
+Project-specific validation that **independently** checks production behaviour; it complements GoogleTest, which stays the test runner.
+
+```text
+Production Components
+        │   (checked, never modified)
+        ▼
+Validation Layer   (opticalnet::validation + tests/validation)
+        │
+        ├── Invariants          topology, failure state, paths, resources, connections, simulation trace
+        ├── Reference Models    exhaustive route enumeration, shadow allocation ledger, Bellman-Ford cross-check
+        ├── Scenario Validation hand-computed golden fixtures, end-to-end flows, determinism / replay
+        ├── Randomized Validation  seeded generators (topologies, constraints, requests, failure scripts)
+        └── Cross-Layer Checks  Topology→Routing→ConnectionManager→ResourceManager, FailureState→Routing, Simulation→metrics
+```
+- Each checker recomputes what it verifies from raw data with different code than the component under test: adjacency from the link list, path cost link by link, allocation with a separate ledger, simulation metrics (including time-weighted utilization and same-timestamp event order) by replaying the event trace, routing optimality by exhaustive enumeration on small graphs and by Bellman-Ford on large ones.
+- Checkers return a `ValidationResult` naming each violated invariant with ids and values; tests convert it to ordinary GoogleTest assertions. Randomized tests use fixed seeds, bounded loops and print the seed.
+- The suite is its own executable (`opticalnet_validation_tests`) so it can be run and mutation-tested independently of the unit tests. The validation library is not linked into production targets, and a future API layer is unaffected by it.
 
 ### Python integration & FastAPI service (Phase 9)
 pybind11 module exposes load-topology, configure, run, and results. A FastAPI app provides topology and simulation endpoints with Pydantic schemas. The service holds no simulation logic; it translates JSON ⇄ C++ calls. Runs are in-process and kept in memory (no database).
@@ -219,9 +235,8 @@ A small `Logger` interface with levels (error/warn/info/debug), thread-safe sink
 
 ### Testing architecture
 - GoogleTest executables per module, aggregated through CTest
-- Unit tests per phase; integration and e2e tests in Phase 8
-- Reference/brute-force oracles for routing; invariant checkers for resources
-- Sanitizer builds (ASan/UBSan, TSan where supported)
+- Unit tests per phase (`opticalnet_unit_tests`) and the Phase 8 validation suite (`opticalnet_validation_tests`): invariant checkers, reference/brute-force oracles, seeded randomized tests, golden fixtures, end-to-end scenarios
+- Sanitizer builds (ASan/UBSan, TSan where supported) remain a possible later addition
 - pytest for the Python API (Phase 9)
 
 ## Planned source layout
