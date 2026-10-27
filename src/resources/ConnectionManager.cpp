@@ -33,7 +33,7 @@ Result<Connection> ConnectionManager::establish(const ConnectionRequest& request
     RoutingConstraints constraints = request.constraints;
     const std::uint32_t demand = request.capacityChannels;
     constraints.linkFilter = [this, demand, callerFilter = request.constraints.linkFilter](const FiberLink& link) {
-        return resources_.hasCapacity(link, demand) && (!callerFilter || callerFilter(link));
+        return resources_.hasCapacity(link, demand) && (!availability_ || availability_(link)) && (!callerFilter || callerFilter(link));
     };
 
     auto path = routing_.findPath(*topology_, request.source, request.destination, constraints);
@@ -41,6 +41,11 @@ Result<Connection> ConnectionManager::establish(const ConnectionRequest& request
         if (path.error().code == ErrorCode::NoFeasibleRoute) {
             // Is capacity the only obstacle? Ask again without the capacity filter.
             RoutingConstraints withoutCapacity = request.constraints;
+            if (availability_) {  // unavailable links stay excluded: only capacity is lifted
+                withoutCapacity.linkFilter = [this, callerFilter = request.constraints.linkFilter](const FiberLink& link) {
+                    return availability_(link) && (!callerFilter || callerFilter(link));
+                };
+            }
             if (routing_.findPath(*topology_, request.source, request.destination, withoutCapacity).ok()) {
                 return Error{ErrorCode::InsufficientCapacity,
                              idLabel(request.id) + ": a route exists but no path has " + std::to_string(demand) +
@@ -71,6 +76,9 @@ Result<void> ConnectionManager::checkPath(const ConnectionRequest& request, cons
         if (link == nullptr)
             return Error{ErrorCode::NotFound, idLabel(request.id) + ": path uses link " + std::to_string(linkId.value()) +
                                                   ", which does not exist"};
+        if (availability_ && !availability_(*link))
+            return Error{ErrorCode::ResourceUnavailable, idLabel(request.id) + ": path uses link " + std::to_string(linkId.value()) +
+                                                             ", which is currently unavailable"};
         if (!topology_->hasNode(path.nodes()[i]) || !link->allowsTraversal(path.nodes()[i], path.nodes()[i + 1]))
             return Error{ErrorCode::InvalidArgument,
                          idLabel(request.id) + ": link " + std::to_string(linkId.value()) + " cannot be traversed from node " +
@@ -100,6 +108,17 @@ Result<void> ConnectionManager::release(ConnectionId id) {
     }
     connections_.erase(it);
     return {};
+}
+
+Result<Connection> ConnectionManager::detach(ConnectionId id) {
+    const auto it = connections_.find(id);
+    if (it == connections_.end()) return Error{ErrorCode::NotFound, idLabel(id) + " is not active"};
+    if (auto released = resources_.release(it->second.allocatedLinks(), it->second.capacityChannels()); !released.ok()) {
+        return released.error();  // inconsistent bookkeeping: nothing was changed
+    }
+    Connection detached = std::move(it->second);
+    connections_.erase(it);
+    return detached;
 }
 
 // ---------------------------------------------------------------------- queries

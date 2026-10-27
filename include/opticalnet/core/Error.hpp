@@ -20,6 +20,8 @@ enum class ErrorCode {
     InsufficientCapacity, // a route exists, but a link on it lacks the free capacity requested
     InconsistentState,    // resource bookkeeping contradicts the requested operation (e.g. over-release)
     InternalError,        // an unexpected exception or environment failure (e.g. threads could not be created)
+    InvalidTransition,    // failing a resource that is already failed, or recovering one that is not failed
+    ResourceUnavailable,  // a path uses a link that is currently unavailable (failed link or failed end node)
 };
 
 [[nodiscard]] std::string_view toString(ErrorCode code) noexcept;

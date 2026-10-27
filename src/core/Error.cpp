@@ -14,6 +14,8 @@ std::string_view toString(ErrorCode code) noexcept {
         case ErrorCode::InsufficientCapacity: return "InsufficientCapacity";
         case ErrorCode::InconsistentState: return "InconsistentState";
         case ErrorCode::InternalError: return "InternalError";
+        case ErrorCode::InvalidTransition: return "InvalidTransition";
+        case ErrorCode::ResourceUnavailable: return "ResourceUnavailable";
     }
     return "Unknown";
 }

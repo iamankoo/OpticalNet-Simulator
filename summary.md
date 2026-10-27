@@ -10,15 +10,15 @@ Source-of-truth documents: [Phases.md](Phases.md), [ARCHITECTURE.md](ARCHITECTUR
 
 ## Current status
 
-- **Implementation status:** Phases 1 (core domain model, build/test foundation), 2 (topology & graph engine), 3 (routing engine), 4 (resource & connection management), 5 (simulation engine) and 6 (multithreaded simulation) are implemented and tested. Phases 7–10 are not started.
-- **Current phase:** Phase 6 complete; ready for Phase 7
-- **Completed phases:** 1, 2, 3, 4, 5, 6
+- **Implementation status:** Phases 1 (core domain model, build/test foundation), 2 (topology & graph engine), 3 (routing engine), 4 (resource & connection management), 5 (simulation engine), 6 (multithreaded simulation) and 7 (failure & recovery simulation) are implemented and tested. Phases 8–10 are not started.
+- **Current phase:** Phase 7 complete; ready for Phase 8
+- **Completed phases:** 1, 2, 3, 4, 5, 6, 7
 - **In-progress phase:** None
-- **Pending phases:** 7–10
-- **Key implemented components:** `Network`, `Node`, `FiberLink`, `Transceiver`, `SwitchingElement`, `INetworkElement`, strong IDs, `Result<T>`/`Error`, `Topology`, `Adjacency`, `ValidationReport`, `CostMetric`/`linkCost`, JSON topology loader/exporter, `Path`, `RoutingConstraints`, `IRoutingAlgorithm`, `DijkstraRouter`, `RoutingEngine`, `ConnectionRequest`, `Connection`, `ConnectionManager`, `ResourceManager`, `LinkUsage`, `SimulationEngine`, `SimulationConfig`, `RequestGenerator`, `EventQueue`, `Rng`, `SimulationResult`/`SimulationMetrics`, `ThreadPool`, `SimulationStudy`/`StudyConfig`/`StudyResult`/`StudyAggregate`, `SampleStatistics`
-- **Current tests/status:** 390 GoogleTest cases (43 Phase 1 + 78 Phase 2 + 74 Phase 3 + 59 Phase 4 + 74 Phase 5 + 62 Phase 6), all passing under CTest in Release and Debug (MSVC, warnings-as-errors)
-- **Known limitations:** See the Phase 1–6 summaries. No failure/recovery simulation, concurrency, failures, validation framework, or Python layer yet.
-- **Next phase:** Phase 7 — Failure & Recovery Simulation
+- **Pending phases:** 8–10
+- **Key implemented components:** `Network`, `Node`, `FiberLink`, `Transceiver`, `SwitchingElement`, `INetworkElement`, strong IDs, `Result<T>`/`Error`, `Topology`, `Adjacency`, `ValidationReport`, `CostMetric`/`linkCost`, JSON topology loader/exporter, `Path`, `RoutingConstraints`, `IRoutingAlgorithm`, `DijkstraRouter`, `RoutingEngine`, `ConnectionRequest`, `Connection`, `ConnectionManager`, `ResourceManager`, `LinkUsage`, `SimulationEngine`, `SimulationConfig`, `RequestGenerator`, `EventQueue`, `Rng`, `SimulationResult`/`SimulationMetrics`, `ThreadPool`, `SimulationStudy`/`StudyConfig`/`StudyResult`/`StudyAggregate`, `SampleStatistics`, `FailureState`, `RecoveryPolicy`, `ScriptedFailure`/`RandomFailureConfig`, `generateRandomFailures`
+- **Current tests/status:** 491 GoogleTest cases (43 Phase 1 + 78 Phase 2 + 74 Phase 3 + 59 Phase 4 + 74 Phase 5 + 62 Phase 6 + 101 Phase 7), all passing under CTest in Release and Debug (MSVC, warnings-as-errors)
+- **Known limitations:** See the Phase 1–7 summaries. No generalized validation framework or Python layer yet.
+- **Next phase:** Phase 8 — Validation & Testing Framework
 
 ## Phase 1 Summary
 
@@ -416,12 +416,89 @@ acceptanceRate, blockingRate, averageUtilization   SampleStatistics of the per-r
 - No ThreadSanitizer run (MSVC); only MSVC was tested.
 - Failure injection and recovery are Phase 7 and do not exist yet.
 
-**Commit:** `feat: implement OpticalNet phase 6 multithreaded simulation` on `main` (the hash is in `git log`; a commit cannot contain its own hash).
+**Commit:** `910020b085a8098bf544d1f5b276ad06f924b0ca` — `feat: implement OpticalNet phase 6 multithreaded simulation`.
 
-**Next phase:** Phase 7 — Failure & Recovery Simulation
+**Next phase:** Phase 7 — Failure & Recovery Simulation (completed below)
 
 ## Phase 7 Summary
-Not started
+
+**Status:** Completed
+
+> **Phase 7 models failures as a non-destructive overlay on the immutable topology. Failed resources become unavailable for routing and allocation without being deleted from the topology.**
+
+**Objective:** Simulate link and node failures and their recovery inside the existing discrete-event engine: detect the active connections a failure hits, recover them under a configurable policy, and keep resources, connections and failure state consistent.
+
+**Failure overlay architecture** (`include/opticalnet/failures/`, `src/failures/`, library `opticalnet::failures`, depends on `opticalnet::routing`):
+```text
+Immutable Topology  +  FailureState (failed links, failed nodes)  =  current network availability
+```
+`FailureState` is owned by one simulation run. A failed resource is *unavailable*, not *deleted*: its `LinkId`/`NodeId` stays valid (traces keep referring to it), the topology is never modified, and configured capacities are never touched. There is no global or shared failure state.
+
+**Link failure / node failure:** `failLink`, `recoverLink`, `failNode`, `recoverNode`, `clearFailures`, `isLinkFailed`, `isNodeFailed`, `isLinkUsable`, `isNodeUsable`, `isPathAffected`, and ordered read-only `failedLinks()` / `failedNodes()`. A link is usable only if it is not failed **and neither end node is failed**, so a failed node makes every incident link unusable (routes cannot enter, leave or pass through it) without marking those links failed. Validation is explicit: unknown id → `NotFound`; failing a failed resource or recovering a healthy one → the new `InvalidTransition`; a failed call changes nothing.
+
+**Routing integration:** no second routing algorithm. `ConnectionManager::setAvailability(predicate)` composes the failure check with the capacity check and the request's own filter through the Phase 3 `linkFilter` seam (`capacity ∧ availability ∧ caller filter`). When only the failure (not capacity) blocks a route the error stays `NoFeasibleRoute`, not `InsufficientCapacity`. `establishOnPath` rejects paths over unavailable links (new `ResourceUnavailable`). The simulation wires the predicate to the run's `FailureState`.
+
+**Failure and recovery events:** `EventType` gained `LinkRecovery`, `NodeRecovery`, `LinkFailure`, `NodeFailure` in the same queue. Same-timestamp order (deterministic, documented, tested): **recoveries → failures → releases → arrivals** (links before nodes within each). State changes come first so that releases and arrivals at that instant see the new state; recoveries precede failures so a reroute at time *t* can use what recovered at *t* and a resource that recovers and fails again at one instant ends failed; the Phase 5 rule "release before arrival" is unchanged. Scripted failures are `ScriptedFailure{time, action, id}` in `SimulationConfig::failureSchedule`; the whole schedule is validated before the run by replaying it in event order (so a same-instant "fail then recover" of one link is rejected as recovering a healthy link).
+
+**Failure detection:** after a failure is applied, the active connections (ascending id) whose current path uses a failed link or passes through/starts/ends at a failed node are the *affected* ones. A plain, deterministic scan of the registry; no extra index was needed.
+
+**Recovery policy (`RecoveryPolicy`):** `NoRecovery` (affected connections are lost) or `Reroute` (default).
+
+**Rerouting and atomicity:** all affected connections are first **detached** (`ConnectionManager::detach` releases exactly their stored allocation and hands back the `Connection`), which makes their freed capacity visible to every reroute; then, in ascending id order, each is **re-established** by the ordinary atomic `establish` with its *own* request: same `ConnectionId`, same demand, same source/destination and the original routing constraints (hop limit, cost limit, blocked nodes/links, caller filter are never relaxed). A reroute therefore either fully succeeds or leaves the connection lost with *nothing* allocated for it: no partial allocation, no leak, no double release. A rerouted connection stays active under its original id (its original scheduled end still applies). A connection that cannot be re-established (no route: `NoFeasibleRoute`; route but no free channels: `InsufficientCapacity`) is lost. `establishOnPath` remains available for precomputed backup paths and now also checks availability.
+
+**Resource semantics during failure:** configured capacity is never changed (no "capacity zero"). A failed resource simply cannot be routed over or allocated on. Allocations on it stay attributed to their connection until that connection is detached by recovery handling (immediately, at the failure event), so there is no window in which a connection sits on a failed resource. At the end of every run the engine verifies that no active connection uses a failed resource, that the registry and per-link allocations agree, and that its own channel counts equal the `ResourceManager`'s; otherwise the run fails with `InconsistentState`.
+
+**Connection lifecycle:** *active* (in the registry) or *lost* (not in the registry, tracked by the engine until its scheduled end). A lost connection stays lost when its resource recovers; when its scheduled end arrives the release is skipped (not counted as a release) and its id is free again; before that, a new request with the same id is rejected as `DuplicateId`.
+
+**Metrics** (added to `SimulationMetrics`; all 0 when no failure is scheduled):
+- `totalFailureEvents` (= `linkFailures` + `nodeFailures`), `linkRecoveries`, `nodeRecoveries`, `failedLinksAtEnd`, `failedNodesAtEnd`.
+- `connectionsAffected`, `connectionsRerouted`, `connectionsLost` (affected = rerouted + lost), `recoverySuccessRate = rerouted / affected` (0 if none affected).
+- `totalConnectionDowntime` = sum over *lost* connections of (min(scheduled end, end of run) − time lost). Rerouting completes inside the failure event and no signalling/restoration delay is modelled, so rerouted connections add exactly 0; therefore no "average recovery time" is reported (it would be a meaningless constant 0).
+- Path statistics (`averagePathCost`, `averageHopCount`, `maxHopCount`) keep describing each connection's first path. The identity `accepted = activeAtEnd + releases + lost` holds.
+- `StudyAggregate` adds `totalFailureEvents`, `totalConnectionsAffected/Rerouted/Lost`, `aggregateRecoverySuccessRate` (from totals) and `totalConnectionDowntime`.
+
+**Trace** (optional, `recordTrace`): failure/recovery events appear as `TraceKind::Event` entries (type `LinkFailure`, …, with `resource` = the id); each affected connection then produces `Affected` followed (after all Affected entries) by `Rerouted` (with the new hop count) or `Lost` (with the reason, absent under `NoRecovery`). Example: `t=1 ARRIVAL #1 → t=5 LINK_FAIL link 2 → AFFECTED #1 → REROUTED #1 (3 hops)`.
+
+**Deterministic failure fixtures (hand-verified):** with the 5-node topology A–B–C (2 hops) plus the detour A–D–E–C (3 hops), 10 channels per link:
+- **A — link failure with alternate route:** #1 (A→C, 4 ch) on A–B–C; link B–C fails at t=5 → rerouted over the detour, same id and demand; final allocation 12 channel-links; utilization (8·4 + 12·5)/(50·10) = 0.184; trace Arrival → LinkFailure → Affected → Rerouted. (The same scenario is also checked at `ConnectionManager` level with exact node/link sequences on the 4-node square.)
+- **B — no alternate route:** only route cut → connection lost, 0 channels left on the healthy link, downtime 5 (or 4 when its scheduled end, t=9, falls inside the run and is skipped).
+- **C — link recovery:** link down → arrival rejected as `NoFeasibleRoute`; recovered → arrival accepted; with the detour topology the route is the detour while down and the short route after recovery.
+- **D — node failure:** transit node B fails → #1 rerouted (3 hops), a request to B is rejected, a new A→C request avoids B (3 hops), after recovery A→C uses B again (2 hops); a failed destination loses the connection; the topology keeps node and links.
+- **E — capacity-constrained reroute:** the detour exists but its first link is full → reroute fails with `InsufficientCapacity`, the connection is lost, the unrelated connection's 10 channels are intact, nothing partially allocated.
+
+**Random failure model:** `RandomFailureConfig{failureRate, meanRepairTime, nodeFailureProbability}` (used only if the scripted schedule is empty): a Poisson process of failures over the whole network, each hitting a uniformly chosen currently-healthy node (probability `nodeFailureProbability`) or link, repaired after an exponential time (recoveries beyond the horizon are not generated). `generateRandomFailures` expands it into a concrete schedule from its **own RNG stream** (`splitmix64(seed + constant)`), independent of traffic and of the workload stream (a test shows enabling failures leaves the request sequence unchanged), always valid and only using existing ids. Scripted and random failures cannot be combined (`InvalidArgument`).
+
+**Multithreaded integration:** each replication builds its own `FailureState`, `ConnectionManager`, queue and RNG streams (the random failure schedule is derived from the replication's seed); only the immutable topology and config are shared. `SimulationStudy` needed no structural change. Verified: 1, 2, 4, 8 and automatic workers give identical per-replication results with scripted and with random failures, repeated parallel runs are identical, each replication equals its standalone run, replications draw different failure schedules, and a scripted schedule applied in every replication (same link fails in all of them) never collides — which it would if overlays were shared.
+
+**Tests (101 new):**
+- *FailureState (15):* fail/recover link and node, unknown ids, repeated failure, recovery of healthy resources, fail-again-after-recovery, independent link/node id spaces, failed node disables incident links without marking them failed, `clearFailures`, ordered accessors, path-affected detection, topology untouched and capacity unchanged, independent overlays.
+- *Schedule (8) / events (4) / random generator (7):* valid and invalid schedules (unknown ids, bad transitions, invalid times, entry named in the message, same-time recovery-before-failure semantics), random-config validation, queue ordering recoveries → failures → releases → arrivals, same-time sequence tie-break; generator determinism, validity (replays cleanly, only existing ids, within the horizon), node/link mix control, zero rate, single-resource.
+- *Routing/recovery primitives at manager level (19):* failed link/node excluded, recovery restores routes, alternate route, no alternate route, capacity and failure combined, caller filter combined, `establishOnPath` over failed resources, `detach` semantics, fixtures A, B and E, hop-limit and blocked-node constraints preserved.
+- *Engine (37):* fixtures A–E with exact metrics and traces, `NoRecovery`, unaffected connections, lost-connection skip/downtime/id reservation, demand and constraint preservation, ascending-id recovery order sharing freed capacity (`recoverySuccessRate` 0.5), repeated reroutes, event ordering with failure+arrival, recovery+arrival, failure+release, recovery+failure, recover-then-fail at one instant, failures beyond the horizon, invalid schedules (scripted and generated runs), scripted+random conflict, random failures (same seed identical, workload unchanged, consistency, policies).
+- *Study (10 + 1 large):* described above, plus a **large study**: 12 replications on an 8×8 grid (64 nodes, 112 links), ~800 requests each (> 6000 in total), random link and node failures (> 120 failure events, > 50 affected connections), 1 worker vs automatic workers identical, and every replication's final allocation and active count recomputed independently from its trace.
+
+**Mutation checks performed (each caught, then restored and verified identical; run with warnings-as-errors off so the mutants compile):** failed link still routable (many failures); failed node still routable; affected connections not detected; `ConnectionId` changed on reroute; recovery ignoring capacity (Phase 4–7 tests); recovery ignoring routing constraints (3 tests); lost connection leaving its allocation behind (caught by the end-of-run consistency check and tests); recovery event not restoring availability; failure/recovery event order changed (4 tests); failure state shared between replications (a `static` overlay; study tests failed).
+
+**Test count and results:** 491 total = 43 Phase 1 + 78 Phase 2 + 74 Phase 3 + 59 Phase 4 + 74 Phase 5 + 62 Phase 6 + 101 Phase 7 (earlier tests unchanged). Debug and Release results are recorded below under "Final build results".
+
+**Important design decisions:** failures are an overlay owned by the run, not topology edits; routing learns about them only through the existing filter seam; recovery = detach-all then re-establish through the existing atomic `establish`, which gets same-id/same-demand/same-constraints/atomicity for free and adds no second allocator; recoveries are ordered before failures at equal times; failed endpoint nodes simply make requests infeasible; random failures use a separate RNG stream; the end-of-run cross-check turns any inconsistency into an error instead of a silently wrong result.
+
+**Known limitations:**
+- Recovery is instantaneous and "all or nothing" per connection: no restoration delay, no partial/degraded service, no protection (pre-reserved backup) paths, no shared-risk groups, no correlated failures.
+- Lost connections are never re-established when their resource recovers (the policy acts only at failure time).
+- Reroute order is by ascending connection id, which is deterministic but not "fair" or priority-aware.
+- A reroute is attempted with the Dijkstra router and the original metric; it does not optimise for minimal disruption or for load balance.
+- `totalConnectionDowntime` counts only lost connections; there is no per-connection availability figure.
+- The random model fails at most one resource at a time per event and does not model failure-rate differences between resources.
+- Failure detection scans the active connections (O(active) per failure), which is fine at the tested scale but not indexed.
+- A user `linkFilter` in the config is still called from several threads in a study and must be thread-safe.
+- Only MSVC was tested; no ThreadSanitizer run.
+
+**Commit:** `feat: implement OpticalNet phase 7 failure and recovery simulation` on `main` (the hash is in `git log`; a commit cannot contain its own hash).
+
+**Next phase:** Phase 8 — Validation & Testing Framework
+
+**Final build results:** clean rebuild from scratch and `ctest`: **Debug 491/491 passed** (~121 s), **Release 491/491 passed** (~11 s). Zero warnings under warnings-as-errors; C++20 confirmed in the compile commands. Toolchain unchanged (MSVC 19.44.35229, CMake 3.31.6, Ninja 1.13.0). All 101 Phase 7 tests were additionally run 30 times in a row in Release and 3 times in a row in Debug with no failure. The large failure study (12 replications run sequentially and in parallel, with trace-based verification) takes about 0.4 s in Release.
 
 ## Phase 8 Summary
 Not started

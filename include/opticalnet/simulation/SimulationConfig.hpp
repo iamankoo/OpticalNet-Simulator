@@ -3,7 +3,10 @@
 #include <cstdint>
 #include <optional>
 
+#include <vector>
+
 #include "opticalnet/core/Error.hpp"
+#include "opticalnet/failures/FailureSchedule.hpp"
 #include "opticalnet/routing/RoutingConstraints.hpp"
 #include "opticalnet/simulation/SimulationEvent.hpp"
 
@@ -49,11 +52,23 @@ struct SimulationConfig {
     // Applied to every generated request (metric, hop/cost limits, blocked elements, ...).
     RoutingConstraints routing;
 
+    // Failures (Phase 7). Failures are a non-destructive overlay on the topology: a failed link/node is
+    // unavailable for routing and allocation but is never deleted.
+    //  - failureSchedule: deterministic scripted failures/recoveries (validated before the run);
+    //  - randomFailures:  a seeded stochastic schedule, generated from its own RNG stream so that enabling it never
+    //                     changes the request workload. Only one of the two may be set.
+    //  - recoveryPolicy:  what happens to connections whose path a failure hits (default: Reroute).
+    std::vector<ScriptedFailure> failureSchedule;
+    std::optional<RandomFailureConfig> randomFailures;
+    RecoveryPolicy recoveryPolicy = RecoveryPolicy::Reroute;
+
     // Keep a per-event trace in the result (memory grows with the number of events).
     bool recordTrace = false;
 
     // InvalidArgument: endTime negative/NaN/infinite, arrivalRate negative/NaN/infinite,
-    // meanLifetime not positive-finite, capacity range empty or starting at 0.
+    // meanLifetime not positive-finite, capacity range empty or starting at 0, invalid random-failure parameters,
+    // both a scripted and a random failure model set, or a scripted failure with a negative/NaN/infinite time.
+    // (Whether scripted ids exist and transitions are valid needs the topology; the engine checks that.)
     [[nodiscard]] Result<void> validate() const;
 };
 

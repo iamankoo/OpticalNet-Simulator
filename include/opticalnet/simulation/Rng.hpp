@@ -6,6 +6,13 @@
 
 namespace opticalnet {
 
+// splitmix64 finalizer: a bijective 64-bit mixer, used to derive independent RNG stream seeds.
+[[nodiscard]] constexpr std::uint64_t splitmix64(std::uint64_t z) noexcept {
+    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
+    z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
+    return z ^ (z >> 31);
+}
+
 // Seeded random source for simulations: std::mt19937_64 plus standard-library distributions.
 //
 // The same seed gives the same sequence for a given compiler/standard library. The C++ standard

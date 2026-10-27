@@ -43,6 +43,11 @@ StudyAggregate aggregate(const std::vector<SimulationResult>& replications) {
         a.totalRejected += m.rejectedRequests;
         a.totalReleases += m.totalReleases;
         for (const auto& [reason, count] : m.rejectionsByReason) a.rejectionsByReason[reason] += count;
+        a.totalFailureEvents += m.totalFailureEvents;
+        a.totalConnectionsAffected += m.connectionsAffected;
+        a.totalConnectionsRerouted += m.connectionsRerouted;
+        a.totalConnectionsLost += m.connectionsLost;
+        a.totalConnectionDowntime += m.totalConnectionDowntime;
         activeAtEnd += static_cast<double>(m.activeConnectionsAtEnd);
         peakActive += static_cast<double>(m.peakActiveConnections);
         peakAllocated += static_cast<double>(m.peakAllocatedChannels);
@@ -56,6 +61,8 @@ StudyAggregate aggregate(const std::vector<SimulationResult>& replications) {
     }
 
     const double n = static_cast<double>(replications.size());
+    if (a.totalConnectionsAffected > 0)
+        a.aggregateRecoverySuccessRate = static_cast<double>(a.totalConnectionsRerouted) / static_cast<double>(a.totalConnectionsAffected);
     if (a.totalRequests > 0) {
         a.aggregateAcceptanceRate = static_cast<double>(a.totalAccepted) / static_cast<double>(a.totalRequests);
         a.aggregateBlockingRate = static_cast<double>(a.totalRejected) / static_cast<double>(a.totalRequests);

@@ -72,6 +72,13 @@ struct StudyAggregate {
     std::uint64_t totalRejected = 0;
     std::uint64_t totalReleases = 0;
     std::map<ErrorCode, std::uint64_t> rejectionsByReason;
+    // Failure/recovery totals (0 without failures). aggregateRecoverySuccessRate = totalRerouted / totalAffected.
+    std::uint64_t totalFailureEvents = 0;
+    std::uint64_t totalConnectionsAffected = 0;
+    std::uint64_t totalConnectionsRerouted = 0;
+    std::uint64_t totalConnectionsLost = 0;
+    double aggregateRecoverySuccessRate = 0.0;
+    double totalConnectionDowntime = 0.0;
     double aggregateAcceptanceRate = 0.0;
     double aggregateBlockingRate = 0.0;
 

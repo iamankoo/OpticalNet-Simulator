@@ -10,7 +10,7 @@ OpticalNet is built in exactly **10 phases**, one at a time. A phase starts only
 | 4 | Resource & Connection Management | Completed |
 | 5 | Simulation Engine | Completed |
 | 6 | Multithreaded Simulation | Completed |
-| 7 | Failure & Recovery Simulation | Not started |
+| 7 | Failure & Recovery Simulation | Completed |
 | 8 | Validation & Testing Framework | Not started |
 | 9 | Python + FastAPI Integration | Not started |
 | 10 | Optimization, Benchmarking & Release | Not started |

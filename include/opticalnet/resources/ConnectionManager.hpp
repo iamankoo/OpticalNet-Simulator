@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <functional>
 #include <map>
 
 #include "opticalnet/resources/Connection.hpp"
@@ -32,6 +33,14 @@ class ConnectionManager {
 public:
     explicit ConnectionManager(const Topology& topology, RoutingEngine routing = RoutingEngine{});
 
+    // Network availability, e.g. the failure overlay: links for which the predicate returns false are never
+    // routed over, and establishOnPath rejects paths that use them (ResourceUnavailable). The topology and
+    // the configured capacities are untouched. It is evaluated through the same linkFilter mechanism as the
+    // capacity check, so it composes with it and with the request's own filter. No predicate = all available.
+    // The predicate (and whatever it refers to) must outlive this manager.
+    using LinkAvailability = std::function<bool(const FiberLink&)>;
+    void setAvailability(LinkAvailability availability) { availability_ = std::move(availability); }
+
     // Route the request around links that lack free capacity, reserve the path, register it.
     //   InvalidArgument      bad request (zero capacity, source == destination)
     //   DuplicateId          the connection id is already active
@@ -51,6 +60,10 @@ public:
     // Return exactly the stored allocation and forget the connection. NotFound if not active
     // (including a second release).
     Result<void> release(ConnectionId id);
+
+    // Like release(), but hands back the connection that was removed (its request, path and demand), so the
+    // caller can try to re-establish it under the same id (recovery). Atomic: on error nothing changes.
+    [[nodiscard]] Result<Connection> detach(ConnectionId id);
 
     // --- registry (read-only views) ---
     [[nodiscard]] const Connection* find(ConnectionId id) const noexcept;
@@ -72,6 +85,7 @@ private:
     [[nodiscard]] Result<Connection> commit(const ConnectionRequest& request, Path path);
 
     const Topology* topology_;
+    LinkAvailability availability_;
     RoutingEngine routing_;
     ResourceManager resources_;
     std::map<ConnectionId, Connection> connections_;

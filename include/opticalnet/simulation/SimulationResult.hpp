@@ -51,6 +51,27 @@ struct SimulationMetrics {
     std::uint64_t peakActiveConnections = 0;
     std::uint64_t totalReleases = 0;
 
+    // Failures and recovery (all 0 when no failure is scheduled). A connection is "affected" when a failure hits a
+    // resource on its current path; it is then either rerouted (kept, same id) or lost.
+    //   totalFailureEvents      = linkFailures + nodeFailures
+    //   recoverySuccessRate     = connectionsRerouted / connectionsAffected   (0 if nothing was affected)
+    //   totalConnectionDowntime = sum over LOST connections of (time the connection would have ended, capped at the
+    //                             end of the run) - (time it was lost). Rerouting completes within the failure event
+    //                             (no restoration delay is modelled), so rerouted connections add 0.
+    // Path statistics above (averagePathCost, averageHopCount, maxHopCount) describe each connection's FIRST path.
+    std::uint64_t totalFailureEvents = 0;
+    std::uint64_t linkFailures = 0;
+    std::uint64_t nodeFailures = 0;
+    std::uint64_t linkRecoveries = 0;
+    std::uint64_t nodeRecoveries = 0;
+    std::uint64_t connectionsAffected = 0;
+    std::uint64_t connectionsRerouted = 0;
+    std::uint64_t connectionsLost = 0;
+    double recoverySuccessRate = 0.0;
+    double totalConnectionDowntime = 0.0;
+    std::uint64_t failedLinksAtEnd = 0;
+    std::uint64_t failedNodesAtEnd = 0;
+
     // Run
     std::uint64_t eventsProcessed = 0;
     // Simulated length of the observation window: endTime, except that a run stopped by maxRequests with
@@ -60,7 +81,15 @@ struct SimulationMetrics {
     friend bool operator==(const SimulationMetrics&, const SimulationMetrics&) = default;
 };
 
-// One processed event (only recorded when SimulationConfig::recordTrace is set).
+// What a trace entry records. Event: the processed event itself (see `type`). The others describe the
+// consequences of a failure event, in this order for each affected connection (ascending id):
+//   Affected -> Rerouted (success, `hops` = new path length) or Lost (success = false, `reason` = why the reroute
+//   failed, absent under NoRecovery). For these, `type` is the causing failure event and `resource` the failed id.
+enum class TraceKind { Event, Affected, Rerouted, Lost };
+
+// One entry of the optional trace (only recorded when SimulationConfig::recordTrace is set). For link/node
+// failure and recovery events `connection`, `source`, `destination` and `capacityChannels` are 0 and `resource`
+// is the LinkId/NodeId value.
 struct TraceEntry {
     SimTime time;
     EventType type;
@@ -71,6 +100,8 @@ struct TraceEntry {
     bool success;                      // arrival: accepted; release: always true
     std::optional<ErrorCode> reason;   // arrival rejected: why
     std::size_t hops;                  // links of the established path (0 for a rejection)
+    std::uint32_t resource = 0;        // failed/recovered LinkId or NodeId value (failure events and their consequences)
+    TraceKind kind = TraceKind::Event;
 
     friend bool operator==(const TraceEntry&, const TraceEntry&) = default;
 };

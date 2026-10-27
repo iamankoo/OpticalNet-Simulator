@@ -84,6 +84,15 @@ target_link_libraries(opticalnet_concurrency
   PUBLIC Threads::Threads
   PRIVATE opticalnet_warnings)
 
+add_library(opticalnet_failures STATIC
+  src/failures/FailureState.cpp
+  src/failures/FailureSchedule.cpp
+)
+add_library(opticalnet::failures ALIAS opticalnet_failures)
+target_link_libraries(opticalnet_failures
+  PUBLIC opticalnet::routing
+  PRIVATE opticalnet_warnings)
+
 add_library(opticalnet_simulation STATIC
   src/simulation/Rng.cpp
   src/simulation/EventQueue.cpp
@@ -91,11 +100,12 @@ add_library(opticalnet_simulation STATIC
   src/simulation/RequestGenerator.cpp
   src/simulation/SimulationEngine.cpp
   src/simulation/Statistics.cpp
+  src/simulation/RandomFailures.cpp
   src/simulation/SimulationStudy.cpp
 )
 add_library(opticalnet::simulation ALIAS opticalnet_simulation)
 target_link_libraries(opticalnet_simulation
-  PUBLIC opticalnet::resources opticalnet::concurrency
+  PUBLIC opticalnet::resources opticalnet::failures opticalnet::concurrency
   PRIVATE opticalnet_warnings)
 
 if(OPTICALNET_BUILD_TESTS)

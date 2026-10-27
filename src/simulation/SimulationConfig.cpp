@@ -21,6 +21,13 @@ Result<void> SimulationConfig::validate() const {
     if (minCapacityChannels > maxCapacityChannels) return bad("minCapacityChannels must not exceed maxCapacityChannels");
     if (maxRequests && *maxRequests > std::numeric_limits<std::uint32_t>::max())
         return bad("maxRequests must fit in 32 bits (connection ids are 32-bit)");
+    if (randomFailures) {
+        if (!failureSchedule.empty()) return bad("set either a scripted failureSchedule or randomFailures, not both");
+        if (auto v = randomFailures->validate(); !v.ok()) return v;
+    }
+    for (const ScriptedFailure& f : failureSchedule) {
+        if (!nonNegativeFinite(f.time)) return bad("failure schedule times must be non-negative finite numbers");
+    }
     return {};
 }
 

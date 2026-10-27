@@ -2,7 +2,7 @@
 
 An optical network simulation and validation platform that models network topology, routing, resource allocation, concurrent simulation, failures/recovery, and network validation.
 
-> **Status: Phases 1-6 of 10 complete.** The core domain model (network, nodes, fiber links, transceivers, switching elements), the topology/graph engine (adjacency lists, connectivity, validation, JSON topology loading/export) a routing engine (Dijkstra shortest path with cost metrics, hop/cost/capacity constraints and deterministic tie-breaking) and the build/test foundation exist. Resource and connection management (atomic per-link channel allocation, connection establish/release) also exists, together with a single-threaded discrete-event simulation engine (virtual time, seeded request generation, metrics). Multithreaded execution of independent simulation replications (a thread pool and parallel simulation studies) also exists. Failure/recovery simulation, the validation framework and the Python/FastAPI layer are **not implemented yet**. See [summary.md](summary.md) for current progress.
+> **Status: Phases 1-7 of 10 complete.** The core domain model (network, nodes, fiber links, transceivers, switching elements), the topology/graph engine (adjacency lists, connectivity, validation, JSON topology loading/export) a routing engine (Dijkstra shortest path with cost metrics, hop/cost/capacity constraints and deterministic tie-breaking) and the build/test foundation exist. Resource and connection management (atomic per-link channel allocation, connection establish/release) also exists, together with a single-threaded discrete-event simulation engine (virtual time, seeded request generation, metrics). Multithreaded execution of independent simulation replications (a thread pool and parallel simulation studies) also exists. Failure and recovery simulation (link and node failures as a non-destructive overlay, rerouting of affected connections) also exists. The generalized validation framework and the Python/FastAPI layer are **not implemented yet**. See [summary.md](summary.md) for current progress.
 
 ## Planned design (see TECHSTACK.md)
 
@@ -40,6 +40,10 @@ Topologies can be described in JSON (see `configs/ring4.json` and `configs/nsfne
 ## Multithreaded studies
 
 `SimulationStudy::run(topology, config, studyConfig)` runs many independent simulation replications concurrently on a thread pool. Each replication is a complete single-threaded simulation with its own state and its own deterministically derived seed, while the topology is shared read-only. Results are returned in replication order and are identical whatever the number of worker threads; the study also reports aggregate figures (totals, weighted acceptance/blocking rates, means, standard deviations and 95% confidence intervals). Individual simulations are not parallelized.
+
+## Failures and recovery
+
+Links and nodes can fail and recover during a simulation, either from a scripted schedule (`SimulationConfig::failureSchedule`, e.g. "fail link 7 at t=100, recover it at t=150") or from a seeded random model. Failures are an **overlay**: the topology is never modified, a failed link or node is simply unavailable for routing and allocation, and recovering it makes it usable again. When a failure hits active connections they are rerouted under their original id, demand and routing constraints (`RecoveryPolicy::Reroute`) or lost (`NoRecovery`), with their resources released consistently. Results include failure counts, affected/rerouted/lost connections, the recovery success rate and the downtime of lost connections.
 
 ## Roadmap
 

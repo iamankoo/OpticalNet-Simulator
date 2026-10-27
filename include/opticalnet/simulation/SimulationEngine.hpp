@@ -41,16 +41,24 @@ struct ScriptedArrival {
 // At the end the engine verifies that the ConnectionManager/ResourceManager are consistent and that its
 // own channel bookkeeping matches the ResourceManager; a mismatch is reported as InconsistentState.
 //
+// Failures (Phase 7): link/node failure and recovery events travel through the same queue. The failure overlay
+// (FailureState) is per run and non-destructive; routing sees it through the ConnectionManager's availability
+// predicate. When a failure hits active connections they are all detached first and then, under
+// RecoveryPolicy::Reroute, re-established in ascending id order (same id, demand and constraints); a connection that
+// cannot be re-established is lost, with its resources already released. Lost connections stay lost when the resource
+// later recovers, and their scheduled release is simply skipped.
+//
 // Phase 5 is intentionally single-threaded; Phase 6 introduces concurrent simulation workers.
 class SimulationEngine {
 public:
     // Generated workload. Errors: InvalidArgument (bad config).
     [[nodiscard]] Result<SimulationResult> run(const Topology& topology, const SimulationConfig& config) const;
 
-    // Explicit workload. Uses config.endTime and config.recordTrace only (seed, rates and request
-    // parameters are ignored; each ScriptedArrival carries its own request). Arrivals with time > endTime
+    // Explicit workload. Uses config.endTime, config.recordTrace, config.failureSchedule and config.recoveryPolicy
+    // (seed, rates, request parameters and randomFailures are ignored; each ScriptedArrival carries its own request). Arrivals with time > endTime
     // are ignored. Arrivals at the same time are processed in span order.
     //   InvalidArgument: bad endTime, or an arrival with negative/NaN time or a non-positive lifetime
+    //   NotFound / InvalidTransition: the failure schedule names an unknown link/node or has an invalid transition
     [[nodiscard]] Result<SimulationResult> runScript(const Topology& topology, std::span<const ScriptedArrival> arrivals,
                                                      const SimulationConfig& config = {}) const;
 };
